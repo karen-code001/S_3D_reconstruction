@@ -7,7 +7,8 @@ from uuid import uuid4
 from fastapi import Depends, FastAPI, HTTPException, Security, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import APIKeyHeader
-from sqlalchemy import select
+from sqlalchemy import delete, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from common.security import create_upload_token
@@ -54,10 +55,24 @@ async def heartbeat_monitor_loop() -> None:
 async def lifespan(_: FastAPI):
     Base.metadata.create_all(bind=engine)
     heartbeat_monitor = asyncio.create_task(heartbeat_monitor_loop())
-    yield
-    heartbeat_monitor.cancel()
-    with suppress(asyncio.CancelledError):
-        await heartbeat_monitor
+    try:
+        yield
+    finally:
+        heartbeat_monitor.cancel()
+        with suppress(asyncio.CancelledError):
+            await heartbeat_monitor
+
+        db = SessionLocal()
+        try:
+            deleted = db.execute(delete(TransferNode)).rowcount or 0
+            db.commit()
+            stale_node_ids.clear()
+            logger.info("Cleared registered transfer nodes during shutdown: count=%s", deleted)
+        except SQLAlchemyError:
+            db.rollback()
+            logger.exception("Failed to clear registered transfer nodes during shutdown")
+        finally:
+            db.close()
 
 
 app = FastAPI(title="3D Reconstruction Control Plane", version="0.1.0", lifespan=lifespan)
@@ -184,6 +199,7 @@ def node_heartbeat(body: NodeHeartbeat, db: Session = Depends(get_db)) -> dict[s
             node.id,
             previous_heartbeat,
         )
+        print(f"Transfer node heartbeat connection recovered: TRANSFER_NODE_ID={node.id}");
         stale_node_ids.discard(node.id)
     logger.info("Heartbeat received: TRANSFER_NODE_ID=%s", body.node_id)
     return {"status": "registered"}
