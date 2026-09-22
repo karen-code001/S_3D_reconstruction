@@ -39,6 +39,7 @@ async def heartbeat_monitor_loop() -> None:
                     last_heartbeat = last_heartbeat.replace(tzinfo=timezone.utc)
                 if last_heartbeat < cutoff:
                     if node.id not in stale_node_ids:
+                        print(datetime.now());
                         logger.warning(
                             "TRANSFER_NODE_ID=%s, transfer node heartbeat is abnormal: last_heartbeat=%s",
                             node.id,
@@ -175,6 +176,7 @@ def node_heartbeat(body: NodeHeartbeat, db: Session = Depends(get_db)) -> dict[s
     if node is None:
         node = TransferNode(id=body.node_id, public_url=str(body.public_url).rstrip("/"))
         db.add(node)
+        print(datetime.now());
         print(f"TRANSFER_NODE_ID={body.node_id}, heartbeat connection established:  PUBLIC_URL={body.public_url}");
     node.public_url = str(body.public_url).rstrip("/")
     node.active = True
@@ -199,6 +201,7 @@ def node_heartbeat(body: NodeHeartbeat, db: Session = Depends(get_db)) -> dict[s
             node.id,
             previous_heartbeat,
         )
+        print(datetime.now());
         print(f"TRANSFER_NODE_ID={node.id}, transfer node heartbeat connection recovered.");
         stale_node_ids.discard(node.id)
     logger.info("Heartbeat received: TRANSFER_NODE_ID=%s", body.node_id)

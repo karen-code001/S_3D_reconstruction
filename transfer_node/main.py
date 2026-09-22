@@ -3,6 +3,7 @@ import logging
 import shutil
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
+from datetime import datetime
 
 import httpx
 from fastapi import BackgroundTasks, Depends, FastAPI, File, Header, HTTPException, Query, UploadFile, status
@@ -57,9 +58,11 @@ async def heartbeat_loop(app: FastAPI) -> None:
                     settings.node_id,
                     settings.control_plane_url,
                 )
+                print(datetime.now());
                 print(f"TRANSFER_NODE_ID={settings.node_id}, heartbeat connection established: CONTROL_PLANE_URL={settings.control_plane_url}");
                 heartbeat_connected = True
         except (httpx.HTTPError, OSError) as exc:
+            print(datetime.now());
             logger.warning(
                 "TRANSFER_NODE_ID=%s, heartbeat failed: CONTROL_PLANE_URL=%s ERROR=%s",
                 settings.node_id,
