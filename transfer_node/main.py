@@ -57,6 +57,7 @@ async def heartbeat_loop(app: FastAPI) -> None:
                     settings.node_id,
                     settings.control_plane_url,
                 )
+                print(f"Heartbeat connection established: TRANSFER_NODE_ID={settings.node_id} CONTROL_PLANE_URL={settings.control_plane_url}",)
                 heartbeat_connected = True
         except (httpx.HTTPError, OSError) as exc:
             logger.warning(

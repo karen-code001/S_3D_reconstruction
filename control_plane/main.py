@@ -1,4 +1,5 @@
-from contextlib import asynccontextmanager
+import asyncio
+from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timedelta, timezone
 import logging
 from uuid import uuid4
@@ -13,19 +14,50 @@ from common.security import create_upload_token
 from common.status import ALLOWED_TRANSITIONS, TERMINAL_STATUSES, TaskStatus
 
 from .config import Settings, get_settings
-from .database import Base, engine, get_db
+from .database import Base, SessionLocal, engine, get_db
 from .load_balancer import NodeSnapshot, choose_transfer_node
 from .models import ReconstructionTask, TransferNode, utcnow
 from .schemas import NodeHeartbeat, TaskCreate, TaskCreated, TaskStatusUpdate, TaskView
 
 logger = logging.getLogger(__name__)
 internal_api_key_header = APIKeyHeader(name="X-Internal-Key", auto_error=False)
+heartbeat_monitor_interval_seconds = 10
+stale_node_ids: set[str] = set()
+
+
+async def heartbeat_monitor_loop() -> None:
+    """Log once when a registered node has been silent for more than one minute."""
+    while True:
+        db = SessionLocal()
+        try:
+            cutoff = utcnow() - timedelta(minutes=1)
+            nodes = db.scalars(select(TransferNode)).all()
+            for node in nodes:
+                last_heartbeat = node.last_heartbeat
+                if last_heartbeat.tzinfo is None:
+                    last_heartbeat = last_heartbeat.replace(tzinfo=timezone.utc)
+                if last_heartbeat < cutoff:
+                    if node.id not in stale_node_ids:
+                        logger.warning(
+                            "Transfer node heartbeat is abnormal: TRANSFER_NODE_ID=%s "
+                            "last_heartbeat=%s",
+                            node.id,
+                            last_heartbeat,
+                        )
+                        stale_node_ids.add(node.id)
+        finally:
+            db.close()
+        await asyncio.sleep(heartbeat_monitor_interval_seconds)
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     Base.metadata.create_all(bind=engine)
+    heartbeat_monitor = asyncio.create_task(heartbeat_monitor_loop())
     yield
+    heartbeat_monitor.cancel()
+    with suppress(asyncio.CancelledError):
+        await heartbeat_monitor
 
 
 app = FastAPI(title="3D Reconstruction Control Plane", version="0.1.0", lifespan=lifespan)
@@ -125,6 +157,7 @@ def get_task(task_id: str, db: Session = Depends(get_db)) -> TaskView:
 @app.post("/internal/nodes/heartbeat", dependencies=[Depends(require_internal_key)])
 def node_heartbeat(body: NodeHeartbeat, db: Session = Depends(get_db)) -> dict[str, str]:
     node = db.get(TransferNode, body.node_id)
+    previous_heartbeat = node.last_heartbeat if node is not None else None
     if node is None:
         node = TransferNode(id=body.node_id, public_url=str(body.public_url).rstrip("/"))
         db.add(node)
@@ -138,6 +171,20 @@ def node_heartbeat(body: NodeHeartbeat, db: Session = Depends(get_db)) -> dict[s
     node.disk_usage_percent = body.disk_usage_percent
     node.last_heartbeat = utcnow()
     db.commit()
+    if previous_heartbeat is not None:
+        if previous_heartbeat.tzinfo is None:
+            previous_heartbeat = previous_heartbeat.replace(tzinfo=timezone.utc)
+        heartbeat_gap = node.last_heartbeat - previous_heartbeat
+    else:
+        heartbeat_gap = None
+    if heartbeat_gap is not None and heartbeat_gap > timedelta(minutes=1):
+        logger.info(
+            "Transfer node heartbeat connection recovered: TRANSFER_NODE_ID=%s "
+            "previous_heartbeat=%s",
+            node.id,
+            previous_heartbeat,
+        )
+        stale_node_ids.discard(node.id)
     logger.info("Heartbeat received: TRANSFER_NODE_ID=%s", body.node_id)
     return {"status": "registered"}
 
