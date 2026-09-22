@@ -1,14 +1,16 @@
 import asyncio
+import json
 import logging
 import shutil
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from datetime import datetime
+from urllib.parse import parse_qs
 
 import httpx
 from fastapi import BackgroundTasks, Depends, FastAPI, File, Header, HTTPException, Query, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from common.security import TokenError, verify_upload_token
@@ -164,6 +166,56 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="3D Reconstruction Transfer Node", version="0.1.0", lifespan=lifespan)
+
+
+class UploadAuthMiddleware:
+    """Authenticate upload URLs before the ASGI app reads the request body."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or scope["method"] != "POST":
+            await self.app(scope, receive, send)
+            return
+
+        path = scope["path"]
+        prefix = "/api/v1/uploads/"
+        if not path.startswith(prefix):
+            await self.app(scope, receive, send)
+            return
+
+        task_id = path[len(prefix) :].split("/", 1)[0]
+        query = parse_qs(scope.get("query_string", b"").decode("latin-1"), keep_blank_values=True)
+        token = query.get("token", [None])[0]
+        error_status = None
+        error_detail = None
+        if not task_id or not token:
+            error_status, error_detail = 401, "upload token is required"
+        else:
+            try:
+                claims = verify_upload_token(token, settings.upload_token_secret)
+                if claims.task_id != task_id or claims.node_id != settings.node_id:
+                    error_status, error_detail = 403, "token does not match task or node"
+            except TokenError as exc:
+                error_status, error_detail = 401, str(exc)
+
+        if error_status is not None:
+            body = json.dumps({"detail": error_detail}).encode()
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": error_status,
+                    "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())],
+                }
+            )
+            await send({"type": "http.response.body", "body": body})
+            return
+
+        await self.app(scope, receive, send)
+
+
+app.add_middleware(UploadAuthMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
@@ -171,29 +223,6 @@ app.add_middleware(
     allow_methods=["POST", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Internal-Key"],
 )
-
-
-@app.middleware("http")
-async def validate_upload_before_body_read(request, call_next):
-    """Reject invalid upload credentials before multipart data is consumed."""
-    if request.method == "POST" and request.url.path.startswith("/api/v1/uploads/"):
-        task_id = request.url.path.removeprefix("/api/v1/uploads/").split("/", 1)[0]
-        token = request.query_params.get("token")
-        if not task_id or not token:
-            return JSONResponse(
-                status_code=401,
-                content={"detail": "upload token is required"},
-            )
-        try:
-            claims = verify_upload_token(token, settings.upload_token_secret)
-        except TokenError as exc:
-            return JSONResponse(status_code=401, content={"detail": str(exc)})
-        if claims.task_id != task_id or claims.node_id != settings.node_id:
-            return JSONResponse(
-                status_code=403,
-                content={"detail": "token does not match task or node"},
-            )
-    return await call_next(request)
 
 
 def require_internal_key(x_internal_key: str = Header(default="")) -> None:
