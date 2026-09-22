@@ -43,7 +43,7 @@ class TaskView(BaseModel):
 
 
 class NodeHeartbeat(BaseModel):
-    node_id: str = Field(min_length=1, max_length=100)
+    node_id: str = Field(min_length=1, max_length=100, examples=["example"])
     public_url: HttpUrl
     current_uploads: int = Field(default=0, ge=0)
     max_uploads: int = Field(default=4, ge=1)
@@ -64,4 +64,3 @@ class TaskStatusUpdate(BaseModel):
     result_url: str | None = None
     error_code: str | None = None
     error_message: str | None = None
-
