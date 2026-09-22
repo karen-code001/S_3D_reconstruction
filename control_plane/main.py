@@ -152,6 +152,7 @@ def create_task(
     node.current_uploads += 1
     db.add(task)
     db.commit()
+    print(f"Creat_task: task_id={task_id}, token={token}");
     return TaskCreated(
         task_id=task_id,
         status=TaskStatus.CREATED,
@@ -212,6 +213,8 @@ def node_heartbeat(body: NodeHeartbeat, db: Session = Depends(get_db)) -> dict[s
 def list_nodes(db: Session = Depends(get_db)) -> list[dict[str, object]]:
     """List transfer nodes registered through the heartbeat endpoint."""
     nodes = db.scalars(select(TransferNode).order_by(TransferNode.id)).all()
+    for node in nodes:
+        print(f"Existing node: TRANSFER_NODE_ID={node.id}, PUBLIC_URL={node.public_url}");
     return [
         {
             "node_id": node.id,

@@ -8,7 +8,7 @@ from datetime import datetime
 import httpx
 from fastapi import BackgroundTasks, Depends, FastAPI, File, Header, HTTPException, Query, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from common.security import TokenError, verify_upload_token
@@ -171,6 +171,29 @@ app.add_middleware(
     allow_methods=["POST", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Internal-Key"],
 )
+
+
+@app.middleware("http")
+async def validate_upload_before_body_read(request, call_next):
+    """Reject invalid upload credentials before multipart data is consumed."""
+    if request.method == "POST" and request.url.path.startswith("/api/v1/uploads/"):
+        task_id = request.url.path.removeprefix("/api/v1/uploads/").split("/", 1)[0]
+        token = request.query_params.get("token")
+        if not task_id or not token:
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "upload token is required"},
+            )
+        try:
+            claims = verify_upload_token(token, settings.upload_token_secret)
+        except TokenError as exc:
+            return JSONResponse(status_code=401, content={"detail": str(exc)})
+        if claims.task_id != task_id or claims.node_id != settings.node_id:
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "token does not match task or node"},
+            )
+    return await call_next(request)
 
 
 def require_internal_key(x_internal_key: str = Header(default="")) -> None:
