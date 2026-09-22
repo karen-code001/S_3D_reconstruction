@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import shutil
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
@@ -21,9 +22,12 @@ settings = get_settings()
 active_uploads = 0
 upload_lock = asyncio.Lock()
 inflight_dispatches: set[str] = set()
+logger = logging.getLogger(__name__)
+heartbeat_connected = False
 
 
 async def heartbeat_loop(app: FastAPI) -> None:
+    global heartbeat_connected
     while True:
         try:
             usage = shutil.disk_usage(settings.storage_root)
@@ -47,8 +51,21 @@ async def heartbeat_loop(app: FastAPI) -> None:
                 headers={"X-Internal-Key": settings.internal_api_key},
             )
             response.raise_for_status()
-        except (httpx.HTTPError, OSError):
-            pass
+            if not heartbeat_connected:
+                logger.info(
+                    "Heartbeat connection established: TRANSFER_NODE_ID=%s CONTROL_PLANE_URL=%s",
+                    settings.node_id,
+                    settings.control_plane_url,
+                )
+                heartbeat_connected = True
+        except (httpx.HTTPError, OSError) as exc:
+            logger.warning(
+                "Heartbeat failed: TRANSFER_NODE_ID=%s CONTROL_PLANE_URL=%s ERROR=%s",
+                settings.node_id,
+                settings.control_plane_url,
+                exc,
+            )
+            heartbeat_connected = False
         await asyncio.sleep(settings.heartbeat_interval_seconds)
 
 
