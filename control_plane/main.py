@@ -3,8 +3,9 @@ from datetime import datetime, timedelta, timezone
 import logging
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, Header, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, Security, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import APIKeyHeader
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -18,6 +19,7 @@ from .models import ReconstructionTask, TransferNode, utcnow
 from .schemas import NodeHeartbeat, TaskCreate, TaskCreated, TaskStatusUpdate, TaskView
 
 logger = logging.getLogger(__name__)
+internal_api_key_header = APIKeyHeader(name="X-Internal-Key", auto_error=False)
 
 
 @asynccontextmanager
@@ -38,7 +40,8 @@ app.add_middleware(
 
 
 def require_internal_key(
-    x_internal_key: str = Header(default=""), config: Settings = Depends(get_settings)
+    x_internal_key: str | None = Security(internal_api_key_header),
+    config: Settings = Depends(get_settings),
 ) -> None:
     if x_internal_key != config.internal_api_key:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid internal key")
@@ -139,6 +142,28 @@ def node_heartbeat(body: NodeHeartbeat, db: Session = Depends(get_db)) -> dict[s
     return {"status": "registered"}
 
 
+@app.get("/internal/nodes", dependencies=[Depends(require_internal_key)])
+def list_nodes(db: Session = Depends(get_db)) -> list[dict[str, object]]:
+    """List transfer nodes registered through the heartbeat endpoint."""
+    nodes = db.scalars(select(TransferNode).order_by(TransferNode.id)).all()
+    return [
+        {
+            "node_id": node.id,
+            "public_url": node.public_url,
+            "active": node.active,
+            "draining": node.draining,
+            "current_uploads": node.current_uploads,
+            "max_uploads": node.max_uploads,
+            "pending_tasks": node.pending_tasks,
+            "network_usage_percent": node.network_usage_percent,
+            "disk_usage_percent": node.disk_usage_percent,
+            "last_heartbeat": node.last_heartbeat,
+            "created_at": node.created_at,
+        }
+        for node in nodes
+    ]
+
+
 @app.patch("/internal/tasks/{task_id}/status", dependencies=[Depends(require_internal_key)])
 def update_task_status(
     task_id: str, body: TaskStatusUpdate, db: Session = Depends(get_db)
@@ -189,3 +214,13 @@ def _task_view(task: ReconstructionTask) -> TaskView:
         updated_at=task.updated_at,
         completed_at=task.completed_at,
     )
+
+
+@app.get("/")
+def root() -> dict[str, str]:
+    return {
+        "service": "3D Reconstruction Control Plane",
+        "status": "ok",
+        "docs": "/docs",
+        "health": "/health",
+    }
