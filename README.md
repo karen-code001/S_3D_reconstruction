@@ -1,0 +1,72 @@
+# 三维重建服务后端骨架
+
+该仓库包含两个相互独立的 FastAPI 服务：
+
+- `control_plane`：部署在电脑 A，创建任务、生成 UUID、选择中转节点并保存任务状态。
+- `transfer_node`：部署在中转机，接收和校验视频、选择计算节点、转发任务并接收计算结果。
+
+## 本地运行
+
+安装依赖：
+
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
+
+开发时可先使用默认 SQLite 启动电脑 A：
+
+```powershell
+uvicorn control_plane.main:app --reload --port 8000
+```
+
+在另一个终端启动中转节点：
+
+```powershell
+$env:TRANSFER_NODE_ID="transfer-1"
+$env:TRANSFER_PUBLIC_URL="http://localhost:8101"
+$env:TRANSFER_CALLBACK_URL="http://localhost:8101"
+$env:TRANSFER_CONTROL_PLANE_URL="http://localhost:8000"
+uvicorn transfer_node.main:app --reload --port 8101
+```
+
+等待一次心跳后创建任务：
+
+```powershell
+$body = @{ filename = "input.mp4"; content_type = "video/mp4" } | ConvertTo-Json
+$task = Invoke-RestMethod -Method Post -Uri http://localhost:8000/api/v1/tasks -ContentType application/json -Body $body
+$task
+curl.exe -X POST -F "file=@input.mp4" $task.upload_url
+Invoke-RestMethod http://localhost:8000/api/v1/tasks/$($task.task_id)
+```
+
+未配置计算节点时，上传完成的任务停留在 `QUEUED`。配置格式为逗号分隔的
+`节点ID|地址|权重`：
+
+```powershell
+$env:TRANSFER_COMPUTE_NODES="gpu-1|http://10.0.0.21:8200|1,gpu-2|http://10.0.0.22:8200|2"
+```
+
+计算节点需要实现：
+
+- `GET /health`，返回 `accepting_tasks`、`active_jobs`、`capacity`。
+- `POST /internal/jobs/{task_id}`，接收 `video` 文件以及 `callback_url`、`progress_url` 表单字段；重复的 `task_id` 必须幂等。
+- 处理期间向 `progress_url` 发送状态、百分比和阶段名称，并携带 `X-Internal-Key`。
+- 完成后向回调地址上传结果文件，并携带 `X-Internal-Key`。
+
+## 生产部署注意事项
+
+- 必须替换 `UPLOAD_TOKEN_SECRET` 和 `INTERNAL_API_KEY`，并通过密钥管理系统注入。
+- 服务间启用 TLS 或双向 TLS，不要把 `/internal` 接口暴露到公网。
+- 结果文件建议迁移至 MinIO、S3 或 NAS；数据库只保存元数据和对象地址。
+- 当前上传接口为流式单请求上传。超大文件生产环境建议增加 tus 或 S3 multipart 分块上传。
+- 用户认证、任务所有权校验、病毒扫描、视频格式探测和结果下载鉴权需要在接入真实用户系统时补齐。
+
+API 文档：电脑 A 的 `/docs`，中转节点的 `/docs`。
+
+运行不依赖第三方测试框架的基础测试：
+
+```powershell
+python -m unittest discover -s tests -v
+```
