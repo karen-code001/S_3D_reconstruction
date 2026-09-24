@@ -6,6 +6,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY common ./common
 COPY control_plane ./control_plane
 COPY transfer_node ./transfer_node
+COPY compute_node ./compute_node
 
 CMD ["uvicorn", "control_plane.main:app", "--host", "0.0.0.0", "--port", "8000"]
-

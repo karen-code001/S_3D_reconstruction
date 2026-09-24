@@ -55,6 +55,33 @@ $env:TRANSFER_COMPUTE_NODES="gpu-1|http://10.0.0.21:8200|1,gpu-2|http://10.0.0.2
 - 处理期间向 `progress_url` 发送状态、百分比和阶段名称，并携带 `X-Internal-Key`。
 - 完成后向回调地址上传结果文件，并携带 `X-Internal-Key`。
 
+## 计算节点示例
+
+仓库中的 `compute_node` 提供了与 `transfer_node` 对接的 FastAPI 示例服务。它实现：
+
+- `GET /health`：返回 `accepting_tasks`、`active_jobs` 和 `capacity`。
+- `POST /internal/jobs/{task_id}`：接收 `video`、`callback_url`、`progress_url`，保存视频并异步执行占位处理。
+- 处理期间向 `progress_url` 发送 JSON 进度，完成后向 `callback_url` 以 multipart 方式上传占位结果。
+- 使用 `COMPUTE_INTERNAL_API_KEY` 对内部接口鉴权，并对重复 `task_id` 幂等返回。
+
+启动示例：
+
+```powershell
+$env:COMPUTE_NODE_ID="gpu-1"
+$env:COMPUTE_INTERNAL_API_KEY="local-internal-key"
+$env:COMPUTE_STORAGE_ROOT="./data/compute-1"
+$env:COMPUTE_CAPACITY="1"
+python3 -m uvicorn compute_node.main:app --host 0.0.0.0 --port 8200
+```
+
+然后在 transfer node 上配置：
+
+```powershell
+$env:TRANSFER_COMPUTE_NODES="gpu-1|http://127.0.0.1:8200|1"
+```
+
+实际三维重建逻辑位于 `compute_node/processor.py` 的 `run_reconstruction`，当前仅生成占位结果文件，可直接替换为 GPU 处理函数。
+
 ## 生产部署注意事项
 
 - 必须替换 `UPLOAD_TOKEN_SECRET` 和 `INTERNAL_API_KEY`，并通过密钥管理系统注入。
@@ -76,10 +103,19 @@ python -m unittest discover -s tests -v
 # 启动control_plane节点
 ```
 python3 -m uvicorn control_plane.main:app --host 0.0.0.0 --port 13000 --reload --no-access-log
+or python -m.......
 ```
 
 
 # 启动transfer_node节点
 ```
 python3 -m uvicorn transfer_node.main:app --host 0.0.0.0 --port 13001 --reload --log-level info
+or python -m.......
+```
+
+
+# 测试 指定端口 能否访问的命令   Windows PowerShell
+
+```
+Test-NetConnection 10.130.10.166 -Port 30952
 ```
