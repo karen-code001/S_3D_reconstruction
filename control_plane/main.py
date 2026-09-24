@@ -41,7 +41,7 @@ async def heartbeat_monitor_loop() -> None:
                     if node.id not in stale_node_ids:
                         print(datetime.now());
                         logger.warning(
-                            "TRANSFER_NODE_ID=%s, PUBLIC_URL=%s, transfer node heartbeat is abnormal: last_heartbeat=%s",
+                            "TRANSFER_NODE_ID=%s, transfer node heartbeat is abnormal: PUBLIC_URL=%s, last_heartbeat=%s",
                             node.id,
                             node.public_url,
                             last_heartbeat,
@@ -204,7 +204,7 @@ def node_heartbeat(body: NodeHeartbeat, db: Session = Depends(get_db)) -> dict[s
             previous_heartbeat,
         )
         print(datetime.now());
-        print(f"TRANSFER_NODE_ID={node.id}, PUBLIC_URL={node.public_url}, transfer node heartbeat connection recovered.");
+        print(f"TRANSFER_NODE_ID={node.id}, transfer node heartbeat connection recovered. PUBLIC_URL={node.public_url}");
         stale_node_ids.discard(node.id)
     logger.info("Heartbeat received: TRANSFER_NODE_ID=%s, PUBLIC_URL=%s", body.node_id, body.public_url)
     return {"status": "registered"}
@@ -232,6 +232,19 @@ def list_nodes(db: Session = Depends(get_db)) -> list[dict[str, object]]:
         }
         for node in nodes
     ]
+
+
+@app.get(
+    "/internal/tasks",
+    response_model=list[TaskView],
+    dependencies=[Depends(require_internal_key)],
+)
+def list_tasks(db: Session = Depends(get_db)) -> list[TaskView]:
+    """List all reconstruction tasks, newest first."""
+    tasks = db.scalars(
+        select(ReconstructionTask).order_by(ReconstructionTask.created_at.desc())
+    ).all()
+    return [_task_view(task) for task in tasks]
 
 
 @app.patch("/internal/tasks/{task_id}/status", dependencies=[Depends(require_internal_key)])
