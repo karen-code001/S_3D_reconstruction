@@ -70,3 +70,16 @@ API 文档：电脑 A 的 `/docs`，中转节点的 `/docs`。
 ```powershell
 python -m unittest discover -s tests -v
 ```
+
+
+
+# 启动control_plane节点
+```
+python3 -m uvicorn control_plane.main:app --host 0.0.0.0 --port 13000 --reload --no-access-log
+```
+
+
+# 启动transfer_node节点
+```
+python3 -m uvicorn transfer_node.main:app --host 0.0.0.0 --port 13001 --reload --log-level info
+```
