@@ -113,9 +113,21 @@ python3 -m uvicorn transfer_node.main:app --host 0.0.0.0 --port 13001 --reload -
 or python -m.......
 ```
 
+# 启动compute_node节点
+```
+python3 -m uvicorn compute_node.main:app --host 0.0.0.0 --port 14000 --reload --log-level info
+or python -m.......
+```
+
 
 # 测试 指定端口 能否访问的命令   Windows PowerShell
 
 ```
 Test-NetConnection 10.130.10.166 -Port 30952
+```
+
+# 发出 get 这类网络http请求的命令   Windows PowerShel, Linux
+```
+Invoke-RestMethod -Uri "http://10.76.135.220:13001/health"
+Linux: curl "http://10.76.135.220:13001/health"
 ```

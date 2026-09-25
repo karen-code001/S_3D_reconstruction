@@ -153,6 +153,7 @@ def create_task(
     node.current_uploads += 1
     db.add(task)
     db.commit()
+    print(datetime.now());
     print(f"Creat_task: task_id={task_id}, token={token}. TRANSFER_NODE_ID={node.id}, PUBLIC_URL={node.public_url}.");
     return TaskCreated(
         task_id=task_id,
@@ -251,6 +252,9 @@ def list_tasks(db: Session = Depends(get_db)) -> list[TaskView]:
 def update_task_status(
     task_id: str, body: TaskStatusUpdate, db: Session = Depends(get_db)
 ) -> TaskView:
+    #print(datetime.now());
+    #print(body);
+    #print(f"task_id:{task_id}, status={body.status}, progress={body.progress}, transfer_node_id={body.node_id}, compute_node_id={body.compute_node_id}");
     task = db.get(ReconstructionTask, task_id)
     if task is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")

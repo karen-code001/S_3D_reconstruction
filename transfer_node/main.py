@@ -359,6 +359,8 @@ async def receive_result(
             result_url=f"{settings.public_url.rstrip('/')}/api/v1/results/{task_id}/{result_path.name}",
         )
         complete_marker.touch()
+    print(datetime.now());
+    print(f"receive_result: task_id:{task_id}, result_name: {result_path.name}, final:{final}");
     return {"task_id": task_id, "received": result_path.name, "final": final}
 
 

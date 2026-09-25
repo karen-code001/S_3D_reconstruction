@@ -13,13 +13,13 @@ class ComputeTarget:
 
 
 class Settings(BaseSettings):
-    node_id: str = "transfer-1"
+    node_id: str = "transfer-1"  ## (use a separate node_id per machine)
     public_url: str = "http://localhost:8101"
     callback_url: str = "http://transfer-1:8100"
     control_plane_url: str = "http://localhost:8000"
     internal_api_key: str = "change-me-in-production"
     upload_token_secret: str = "change-me-in-production"
-    storage_root: Path = Path("./data/transfer-1")
+    storage_root: Path = Path("./data/transfer")
     max_upload_bytes: int = 20 * 1024 * 1024 * 1024
     max_concurrent_uploads: int = 4
     heartbeat_interval_seconds: int = 10

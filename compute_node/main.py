@@ -5,6 +5,7 @@ import re
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from urllib.parse import urlparse
+from datetime import datetime
 
 import httpx
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile, status
@@ -83,6 +84,8 @@ async def post_result(
     task_id: str,
     output_path: Path,
 ) -> None:
+    print(datetime.now());
+    print(f"post_result: task_id:{task_id}, callback_url:{callback_url}");
     with output_path.open("rb") as output:
         response = await client.post(
             callback_url,
@@ -164,6 +167,8 @@ async def create_job(
     validate_callback_url(progress_url, "progress_url")
     task_dir = settings.storage_root / task_id
     input_path = task_dir / "input.bin"
+    print(datetime.now());
+    print(f"receive_job: task_id:{task_id}, callback_url:{callback_url}");
 
     async with jobs_lock:
         if task_id in running_tasks or (task_dir / ".complete").exists():

@@ -5,9 +5,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    node_id: str = "gpu-1"
+    node_id: str = "gpu-1"   # (use a separate node_id per machine)
     internal_api_key: str = "change-me-in-production"
-    storage_root: Path = Path("./data/compute-1")
+    storage_root: Path = Path("./data/compute")
     capacity: int = 1
     max_upload_bytes: int = 20 * 1024 * 1024 * 1024
     callback_timeout_seconds: float = 30.0
