@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     heartbeat_interval_seconds: int = 10
     dispatch_interval_seconds: int = 5
     compute_nodes: str = ""
-    cors_origins: str = "http://localhost:5173"
+    cors_origins: str = "null, http://localhost:8000,http://127.0.0.1:8000,http://localhost:13000"
 
     model_config = SettingsConfigDict(env_prefix="TRANSFER_", env_file=".env", extra="ignore")
 

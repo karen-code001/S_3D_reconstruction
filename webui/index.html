@@ -16,7 +16,7 @@
   <main id="top">
     <section class="hero">
       <p class="eyebrow">VIDEO TO 3D · ASYNC WORKFLOW</p>
-      <h1>从视频到可下载的<br><span>三维重建结果</span></h1>
+      <h1>从视频到<span>三维重建</span></h1>
       <p class="hero-copy">上传视频后会立即返回 task_id。请保存它，用于查询处理进度和下载最终结果。</p>
       <div class="flow" aria-label="使用步骤"><span><b>01</b>上传视频</span><i></i><span><b>02</b>保存 task_id</span><i></i><span><b>03</b>查询与下载</span></div>
     </section>
@@ -40,9 +40,9 @@
           <span class="upload-icon" aria-hidden="true">↑</span>
           <strong>拖放视频到这里</strong><span>或点击选择文件</span><small>支持 MP4、MOV、AVI、MKV、WebM 等常见格式</small>
         </label>
-        <div id="fileCard" class="file-card" hidden><div class="file-type">VID</div><div class="file-meta"><strong id="fileName"></strong><span id="fileSize"></span></div><button id="removeFile" type="button" aria-label="移除文件">×</button></div>
+        <div id="fileCard" class="file-card" hidden><div class="file-type">Video</div><div class="file-meta"><strong id="fileName"></strong><span id="fileSize"></span></div><button id="removeFile" type="button" aria-label="移除文件">×</button></div>
         <label class="field">任务备注（可选）<input id="taskNote" maxlength="100" placeholder="例如：园区航拍 2026-09" /></label>
-        <button id="uploadButton" class="primary-button" type="button" disabled><span>上传并创建任务</span><b>→</b></button>
+        <button id="uploadButton" class="primary-button" type="button" disabled><span>上传视频并创建任务</span><b>→</b></button>
         <div id="uploadProgress" class="progress-wrap" hidden><div class="progress-label"><span>正在上传视频</span><b id="uploadPercent">0%</b></div><div class="progress-track"><i id="uploadBar"></i></div></div>
         <div id="taskResult" class="task-result" hidden><span>任务已创建</span><div><code id="createdTaskId"></code><button id="copyTaskId" type="button">复制 task_id</button></div><p>请妥善保存此编号。页面也会在本机保留最近任务。</p></div>
       </article>
@@ -57,7 +57,7 @@
 
         <article class="panel compact-panel">
           <div class="panel-heading"><span class="step-number">03</span><div><h2>下载重建结果</h2><p>任务完成后使用 task_id 下载</p></div></div>
-          <div class="task-id-row"><input id="downloadTaskId" aria-label="下载任务的 task_id" placeholder="输入 task_id" /><button id="downloadButton" class="icon-button accent" type="button">下载</button></div>
+          <div class="task-id-row"><input id="downloadTaskId" aria-label="下载任务的 task_id" placeholder="输入 task_id" /><button id="downloadButton" class="icon-button accent" type="button"> 下载 </button></div>
           <p id="downloadHint" class="download-hint">如果任务尚未完成，系统会提示当前状态。</p>
         </article>
 

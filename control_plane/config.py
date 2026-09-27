@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     internal_api_key: str = "change-me-in-production"
     upload_token_ttl_seconds: int = 3600
     node_stale_after_seconds: int = 60
-    cors_origins: str = "http://localhost:5173"
+    cors_origins: str = "null, http://localhost:8000, http://127.0.0.1:8000"
 
     model_config = SettingsConfigDict(env_prefix="CONTROL_", env_file=".env", extra="ignore")
 
