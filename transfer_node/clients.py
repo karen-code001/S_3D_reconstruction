@@ -35,8 +35,8 @@ async def report_status(
 async def choose_compute_node(client: httpx.AsyncClient, targets: list[ComputeTarget]) -> ComputeTarget | None:
     async def probe(target: ComputeTarget):
         try:
-            print(f"choose_compute_node: server_id:{target.node_id}, weight:{target.weight}, url:{target.base_url}");
             response = await client.get(f"{target.base_url}/health", timeout=3)
+            print(f"chosen compute_node: server_id:{target.node_id}, weight:{target.weight}, url:{target.base_url}");
             print(f"response: {response}");
             response.raise_for_status()
             data = response.json()

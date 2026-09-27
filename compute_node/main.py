@@ -190,3 +190,14 @@ async def create_job(
 
     asyncio.create_task(process_job(task_id, input_path, callback_url, progress_url))
     return {"task_id": task_id, "accepted": True, "size": size, "sha256": sha256}
+
+
+@app.get("/")
+def root() -> dict[str, str]:
+    return {
+        "service": "3D Reconstruction Compute Node",
+        "status": "ok",
+        "docs": "/docs",
+        "health": "/health",
+    }
+

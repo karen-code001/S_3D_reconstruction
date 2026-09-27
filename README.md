@@ -45,7 +45,7 @@ Invoke-RestMethod http://localhost:8000/api/v1/tasks/$($task.task_id)
 `节点ID|地址|权重`：
 
 ```powershell
-$env:TRANSFER_COMPUTE_NODES="gpu-1|http://10.0.0.21:8200|1,gpu-2|http://10.0.0.22:8200|2"
+$env:TRANSFER_COMPUTE_NODES="Server-1|http://10.0.0.21:8200|1,Server-2|http://10.0.0.22:8200|2"
 ```
 
 计算节点需要实现：
@@ -67,9 +67,9 @@ $env:TRANSFER_COMPUTE_NODES="gpu-1|http://10.0.0.21:8200|1,gpu-2|http://10.0.0.2
 启动示例：
 
 ```powershell
-$env:COMPUTE_NODE_ID="gpu-1"
+$env:COMPUTE_NODE_ID="Server-1"
 $env:COMPUTE_INTERNAL_API_KEY="local-internal-key"
-$env:COMPUTE_STORAGE_ROOT="./data/compute-1"
+$env:COMPUTE_STORAGE_ROOT="./data/compute"
 $env:COMPUTE_CAPACITY="1"
 python3 -m uvicorn compute_node.main:app --host 0.0.0.0 --port 8200
 ```
@@ -77,7 +77,7 @@ python3 -m uvicorn compute_node.main:app --host 0.0.0.0 --port 8200
 然后在 transfer node 上配置：
 
 ```powershell
-$env:TRANSFER_COMPUTE_NODES="gpu-1|http://127.0.0.1:8200|1"
+$env:TRANSFER_COMPUTE_NODES="Server-1|http://127.0.0.1:8200|1"
 ```
 
 实际三维重建逻辑位于 `compute_node/processor.py` 的 `run_reconstruction`，当前仅生成占位结果文件，可直接替换为 GPU 处理函数。
@@ -126,8 +126,21 @@ or python -m.......
 Test-NetConnection 10.130.10.166 -Port 30952
 ```
 
+
 # 发出 get 这类网络http请求的命令   Windows PowerShel, Linux
 ```
 Invoke-RestMethod -Uri "http://10.76.135.220:13001/health"
 Linux: curl "http://10.76.135.220:13001/health"
+```
+
+
+# 通过ssh隧道，配置两台机器的 http 网络端口 转发
+# 本地转发 -L，用于网络服务在服务器上，映射为本地可访问
+# 远程转发 -R，用于网络服务在本地，映射为服务器端可访问
+# -L/-R forwarded_address : service_address
+# -L/-R forwarded_ip:port : service_ip:port
+```
+ssh -N -p 30952 -L 127.0.0.1:14001:127.0.0.1:14000 dky_YX(alias in .ssh/config )
+ssh -N -p 30952 -L 127.0.0.1:14001:127.0.0.1:14000 -R 127.0.0.1:13001:127.0.0.1:13001 -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 dky_YX
+ssh -N -p 30952 -L 127.0.0.1:14002:127.0.0.1:14000 -R 127.0.0.1:13001:127.0.0.1:13001 -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 dky_YX2
 ```

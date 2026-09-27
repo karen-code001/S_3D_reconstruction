@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     upload_token_secret: str = "change-me-in-production"
     internal_api_key: str = "change-me-in-production"
     upload_token_ttl_seconds: int = 3600
-    node_stale_after_seconds: int = 30
+    node_stale_after_seconds: int = 60
     cors_origins: str = "http://localhost:5173"
 
     model_config = SettingsConfigDict(env_prefix="CONTROL_", env_file=".env", extra="ignore")

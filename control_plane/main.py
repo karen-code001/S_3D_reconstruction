@@ -31,7 +31,7 @@ async def heartbeat_monitor_loop() -> None:
     while True:
         db = SessionLocal()
         try:
-            cutoff = utcnow() - timedelta(minutes=1)
+            cutoff = utcnow() - timedelta(seconds=settings.node_stale_after_seconds)
             nodes = db.scalars(select(TransferNode)).all()
             for node in nodes:
                 last_heartbeat = node.last_heartbeat
@@ -46,6 +46,8 @@ async def heartbeat_monitor_loop() -> None:
                             node.public_url,
                             last_heartbeat,
                         )
+                        node.active = False
+                        db.commit()
                         stale_node_ids.add(node.id)
         finally:
             db.close()
@@ -255,6 +257,10 @@ def update_task_status(
     #print(datetime.now());
     #print(body);
     #print(f"task_id:{task_id}, status={body.status}, progress={body.progress}, transfer_node_id={body.node_id}, compute_node_id={body.compute_node_id}");
+    if  "SUCCEEDED" == body.status:
+        print(datetime.now());
+        print(f"task_succeeded: task_id={task_id}, status={body.status}, progress={body.progress}, transfer_node_id={body.node_id}, compute_node_id={body.compute_node_id}, result_url={body.result_url}");
+
     task = db.get(ReconstructionTask, task_id)
     if task is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")

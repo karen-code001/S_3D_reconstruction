@@ -98,6 +98,7 @@ async def dispatch_task(app: FastAPI, task_id: str, source: Path) -> None:
     inflight_dispatches.add(task_id)
     try:
         target = await choose_compute_node(app.state.client, settings.compute_targets)
+        print(f"compute target: {target}");
         if target is None:
             queued_marker = source.parent / ".queued_reported"
             if not queued_marker.exists():
@@ -404,3 +405,14 @@ def download_result(task_id: str, filename: str):
     if result_root not in path.parents or not path.is_file():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="result not found")
     return FileResponse(path, filename=path.name, media_type="application/octet-stream")
+
+
+@app.get("/")
+def root() -> dict[str, str]:
+    return {
+        "service": "3D Reconstruction Transfer Node",
+        "status": "ok",
+        "docs": "/docs",
+        "health": "/health",
+    }
+
