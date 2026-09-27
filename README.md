@@ -1,4 +1,5 @@
 # 三维重建服务后端骨架
+Service_3D_reconstruction
 
 该仓库包含两个相互独立的 FastAPI 服务：
 
