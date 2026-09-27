@@ -2,11 +2,13 @@ import asyncio
 from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timedelta, timezone
 import logging
+from pathlib import Path
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, HTTPException, Security, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import APIKeyHeader
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import delete, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -87,6 +89,10 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Internal-Key"],
 )
+
+webui_dir = Path(__file__).resolve().parent.parent / "webui"
+if webui_dir.is_dir():
+    app.mount("/ui", StaticFiles(directory=webui_dir, html=True), name="webui")
 
 
 def require_internal_key(

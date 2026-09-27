@@ -1,0 +1,47 @@
+(() => {
+  'use strict';
+  const DEFAULTS = {"upload":"/api/v1/tasks","status":"/api/v1/tasks/{task_id}","download":"/api/v1/tasks/{task_id}"};
+  const FALLBACKS = {
+    upload: ['/api/v1/tasks'],
+    status: ['/api/v1/tasks/{task_id}'],
+    download: ['/api/v1/tasks/{task_id}']
+  };
+  const $ = id => document.getElementById(id);
+  const els = Object.fromEntries(['settingsToggle','settingsPanel','apiBase','uploadPath','statusPath','downloadPath','saveSettings','dropZone','videoInput','fileCard','fileName','fileSize','removeFile','taskNote','uploadButton','uploadProgress','uploadPercent','uploadBar','taskResult','createdTaskId','copyTaskId','statusTaskId','statusButton','autoPoll','statusResult','downloadTaskId','downloadButton','downloadHint','recentTasks','clearRecent','toast'].map(id => [id, $(id)]));
+  let selectedFile = null, pollTimer = null, toastTimer = null;
+  const loadConfig = () => ({...DEFAULTS, ...(JSON.parse(localStorage.getItem('recon-api-config') || '{}'))});
+  const saveConfig = config => localStorage.setItem('recon-api-config', JSON.stringify(config));
+  const base = () => (loadConfig().base || '').replace(/\/$/, '');
+  const endpoint = (path, taskId='') => base() + path.replace('{task_id}', encodeURIComponent(taskId));
+  const paths = type => { const cfg=loadConfig(); return [...new Set([cfg[type], ...FALLBACKS[type]])]; };
+  const formatBytes = n => n < 1024*1024 ? (n/1024).toFixed(1)+' KB' : (n/1024/1024).toFixed(1)+' MB';
+  const messageFrom = data => data?.detail || data?.message || data?.error || '请求失败，请检查接口设置和 task_id。';
+  const showToast = (msg, error=false) => { clearTimeout(toastTimer); els.toast.textContent=msg; els.toast.className='toast show'+(error?' error':''); toastTimer=setTimeout(()=>els.toast.className='toast',3200); };
+  const requestJson = async (url, options={}) => { const res=await fetch(url,options); const type=res.headers.get('content-type')||''; const data=type.includes('json')?await res.json():await res.text(); if(!res.ok) throw Object.assign(new Error(typeof data==='string'?data:messageFrom(data)),{status:res.status}); return data; };
+  const tryPaths = async (type, taskId, fn) => { let last; for(const path of paths(type)){ try{return await fn(endpoint(path,taskId),path);}catch(e){last=e;if(![404,405].includes(e.status))throw e;} } throw last||new Error('没有可用的接口'); };
+  const extractTaskId = data => data?.task_id || data?.taskId || data?.id || data?.data?.task_id || data?.data?.id;
+  const extractStatus = data => String(data?.status || data?.state || data?.task_status || data?.data?.status || 'unknown').toLowerCase();
+  const extractProgress = data => { const v=data?.progress ?? data?.percent ?? data?.percentage ?? data?.data?.progress; return v==null?'':(Number(v)<=1?Math.round(Number(v)*100):Math.round(Number(v)))+'%'; };
+  const addRecent = id => { const list=JSON.parse(localStorage.getItem('recon-recent-tasks')||'[]').filter(x=>x.id!==id); list.unshift({id,time:Date.now()}); localStorage.setItem('recon-recent-tasks',JSON.stringify(list.slice(0,8))); renderRecent(); };
+  const renderRecent = () => { const list=JSON.parse(localStorage.getItem('recon-recent-tasks')||'[]'); els.recentTasks.innerHTML=list.length?'':'<p class="muted">暂无最近任务</p>'; list.forEach(item=>{ const row=document.createElement('div'); row.className='recent-item'; const code=document.createElement('code'); code.textContent=item.id; const use=document.createElement('button'); use.textContent='使用'; use.onclick=()=>{els.statusTaskId.value=item.id;els.downloadTaskId.value=item.id;queryStatus();}; row.append(code,use); els.recentTasks.append(row); }); };
+  const setFile = file => { if(!file)return; if(!file.type.startsWith('video/')&&!/\.(mp4|mov|avi|mkv|webm)$/i.test(file.name)){showToast('请选择视频文件',true);return;} selectedFile=file;els.fileName.textContent=file.name;els.fileSize.textContent=formatBytes(file.size);els.fileCard.hidden=false;els.uploadButton.disabled=false;els.taskResult.hidden=true; };
+  const clearFile = () => { selectedFile=null;els.videoInput.value='';els.fileCard.hidden=true;els.uploadButton.disabled=true; };
+  const upload = async () => { if(!selectedFile)return; els.uploadButton.disabled=true;els.uploadProgress.hidden=false;els.taskResult.hidden=true;
+    try {
+      const created=await tryPaths('upload','',url=>requestJson(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filename:selectedFile.name,content_type:selectedFile.type||null,size:selectedFile.size})}));
+      const id=extractTaskId(created), uploadUrl=created?.upload_url;
+      if(!id||!uploadUrl)throw new Error('创建任务响应缺少 task_id 或 upload_url');
+      await new Promise((resolve,reject)=>{const form=new FormData();form.append('file',selectedFile);const xhr=new XMLHttpRequest();xhr.open('POST',uploadUrl);xhr.upload.onprogress=e=>{if(e.lengthComputable){const p=Math.round(e.loaded/e.total*100);els.uploadPercent.textContent=p+'%';els.uploadBar.style.width=p+'%';}};xhr.onload=()=>{let data;try{data=JSON.parse(xhr.responseText)}catch{data=xhr.responseText}if(xhr.status>=200&&xhr.status<300)resolve(data);else reject(new Error(typeof data==='string'?data:messageFrom(data)));};xhr.onerror=()=>reject(new Error('视频上传失败，请检查中转节点地址和 CORS 配置'));xhr.send(form);});
+      els.createdTaskId.textContent=id;els.statusTaskId.value=id;els.downloadTaskId.value=id;els.taskResult.hidden=false;addRecent(String(id));showToast('视频已上传，任务创建成功');
+    } catch(e) { showToast(e.message,true); }
+    finally { finishUpload(); }
+  };
+  const finishUpload=()=>{els.uploadButton.disabled=!selectedFile;els.uploadProgress.hidden=true;els.uploadBar.style.width='0';els.uploadPercent.textContent='0%';};
+  const queryStatus = async () => { const id=els.statusTaskId.value.trim(); if(!id){showToast('请输入 task_id',true);return;} els.statusButton.disabled=true; try{const data=await tryPaths('status',id,url=>requestJson(url)); const status=extractStatus(data), progress=extractProgress(data); const done=/(done|complete|completed|success|succeeded|finished)/.test(status), failed=/(fail|error|cancel)/.test(status); els.statusResult.className='status-result '+(done?'done':failed?'failed':'running'); const label=done?'任务已完成':failed?'任务失败':status==='unknown'?'状态已更新':'正在处理'; const detail=data?.error_message||data?.current_stage||data?.message||'';els.statusResult.querySelector('strong').textContent=label+(progress?' · '+progress:''); els.statusResult.querySelector('p').textContent='状态：'+status+(detail?' · '+detail:''); addRecent(id);return data;}catch(e){els.statusResult.className='status-result failed';els.statusResult.querySelector('strong').textContent='查询失败';els.statusResult.querySelector('p').textContent=e.message;showToast(e.message,true);}finally{els.statusButton.disabled=false;} };
+  const download = async () => { const id=els.downloadTaskId.value.trim(); if(!id){showToast('请输入 task_id',true);return;} els.downloadButton.disabled=true;els.downloadHint.textContent='正在查询结果…'; try{const data=await tryPaths('download',id,url=>requestJson(url));const status=extractStatus(data);if(status!=='succeeded')throw new Error('任务尚未完成，当前状态：'+status);if(!data.result_url)throw new Error('任务已完成，但接口未返回 result_url');const url=new URL(data.result_url,base()||window.location.origin).href;const a=document.createElement('a');a.href=url;a.rel='noopener';document.body.append(a);a.click();a.remove();els.downloadHint.textContent='下载已开始。';addRecent(id);}catch(e){els.downloadHint.textContent=e.message;showToast(e.message,true);}finally{els.downloadButton.disabled=false;} };
+  const cfg=loadConfig();els.apiBase.value=cfg.base||'';els.uploadPath.value=cfg.upload;els.statusPath.value=cfg.status;els.downloadPath.value=cfg.download;
+  els.settingsToggle.onclick=()=>els.settingsPanel.hidden=!els.settingsPanel.hidden;
+  els.saveSettings.onclick=()=>{saveConfig({base:els.apiBase.value.trim(),upload:els.uploadPath.value.trim()||DEFAULTS.upload,status:els.statusPath.value.trim()||DEFAULTS.status,download:els.downloadPath.value.trim()||DEFAULTS.download});showToast('接口设置已保存');els.settingsPanel.hidden=true;};
+  els.dropZone.ondragover=e=>{e.preventDefault();els.dropZone.classList.add('dragging');};els.dropZone.ondragleave=()=>els.dropZone.classList.remove('dragging');els.dropZone.ondrop=e=>{e.preventDefault();els.dropZone.classList.remove('dragging');setFile(e.dataTransfer.files[0]);};els.dropZone.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();els.videoInput.click();}};
+  els.videoInput.onchange=e=>setFile(e.target.files[0]);els.removeFile.onclick=e=>{e.preventDefault();clearFile();};els.uploadButton.onclick=upload;els.copyTaskId.onclick=async()=>{await navigator.clipboard.writeText(els.createdTaskId.textContent);showToast('task_id 已复制');};els.statusButton.onclick=queryStatus;els.statusTaskId.onkeydown=e=>{if(e.key==='Enter')queryStatus();};els.autoPoll.onchange=()=>{clearInterval(pollTimer);if(els.autoPoll.checked){queryStatus();pollTimer=setInterval(queryStatus,3000);}};els.downloadButton.onclick=download;els.downloadTaskId.onkeydown=e=>{if(e.key==='Enter')download();};els.clearRecent.onclick=()=>{localStorage.removeItem('recon-recent-tasks');renderRecent();};renderRecent();
+})();

@@ -93,6 +93,16 @@ $env:TRANSFER_COMPUTE_NODES="Server-1|http://127.0.0.1:8200|1"
 
 API 文档：电脑 A 的 `/docs`，中转节点的 `/docs`。
 
+## 用户 Web 界面
+
+控制节点会把 `webui/` 挂载到 `/ui`。启动控制节点和至少一个中转节点后，访问：
+
+```text
+http://localhost:13000/ui/
+```
+
+界面支持上传视频创建任务、复制 `task_id`、查询进度和根据任务返回的 `result_url` 下载结果。若端口或域名不同，可在页面右上角“接口设置”中修改 API 地址。中转节点的 `TRANSFER_CORS_ORIGINS` 需要包含 Web 页面所在的来源地址。
+
 运行不依赖第三方测试框架的基础测试：
 
 ```powershell
