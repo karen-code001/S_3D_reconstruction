@@ -1,4 +1,5 @@
 # 三维重建服务后端骨架
+Service_3D_reconstruction
 
 该仓库包含两个相互独立的 FastAPI 服务：
 
@@ -103,44 +104,15 @@ python -m unittest discover -s tests -v
 # 启动control_plane节点
 ```
 python3 -m uvicorn control_plane.main:app --host 0.0.0.0 --port 13000 --reload --no-access-log
-or python -m.......
 ```
 
 
 # 启动transfer_node节点
 ```
 python3 -m uvicorn transfer_node.main:app --host 0.0.0.0 --port 13001 --reload --log-level info
-or python -m.......
 ```
 
 # 启动compute_node节点
 ```
 python3 -m uvicorn compute_node.main:app --host 0.0.0.0 --port 14000 --reload --log-level info
-or python -m.......
-```
-
-
-# 测试 指定端口 能否访问的命令   Windows PowerShell
-
-```
-Test-NetConnection 10.130.10.166 -Port 30952
-```
-
-
-# 发出 get 这类网络http请求的命令   Windows PowerShel, Linux
-```
-Invoke-RestMethod -Uri "http://10.76.135.220:13001/health"
-Linux: curl "http://10.76.135.220:13001/health"
-```
-
-
-# 通过ssh隧道，配置两台机器的 http 网络端口 转发
-# 本地转发 -L，用于网络服务在服务器上，映射为本地可访问
-# 远程转发 -R，用于网络服务在本地，映射为服务器端可访问
-# -L/-R forwarded_address : service_address
-# -L/-R forwarded_ip:port : service_ip:port
-```
-ssh -N -p 30952 -L 127.0.0.1:14001:127.0.0.1:14000 dky_YX(alias in .ssh/config )
-ssh -N -p 30952 -L 127.0.0.1:14001:127.0.0.1:14000 -R 127.0.0.1:13001:127.0.0.1:13001 -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 dky_YX
-ssh -N -p 30952 -L 127.0.0.1:14002:127.0.0.1:14000 -R 127.0.0.1:13001:127.0.0.1:13001 -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 dky_YX2
 ```
