@@ -130,6 +130,12 @@ python3 -m uvicorn compute_node.main:app --host 0.0.0.0 --port 14000 --reload --
 or python -m.......
 ```
 
+# 启动 web ui 用户界面
+```
+python3 -m http.server 8000 -d webui
+or python -m.......
+```
+
 
 # 测试 指定端口 能否访问的命令   Windows PowerShell
 
