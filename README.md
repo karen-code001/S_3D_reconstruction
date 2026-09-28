@@ -132,7 +132,7 @@ or python -m.......
 
 # 启动 web ui 用户界面
 ```
-python3 -m http.server 8000 -d webui
+python3 -m http.server 8088 -d web_UI
 or python -m.......
 ```
 

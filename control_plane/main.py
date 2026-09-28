@@ -90,9 +90,9 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type", "X-Internal-Key"],
 )
 
-webui_dir = Path(__file__).resolve().parent.parent / "webui"
+webui_dir = Path(__file__).resolve().parent.parent / "web_UI"
 if webui_dir.is_dir():
-    app.mount("/ui", StaticFiles(directory=webui_dir, html=True), name="webui")
+    app.mount("/ui", StaticFiles(directory=webui_dir, html=True), name="web_ui")
 
 
 def require_internal_key(
@@ -162,7 +162,9 @@ def create_task(
     db.add(task)
     db.commit()
     print(datetime.now());
-    print(f"Creat_task: task_id={task_id}, token={token}. TRANSFER_NODE_ID={node.id}, PUBLIC_URL={node.public_url}.");
+    print(f"Create_task: task_id={task_id}, token={token}. ",
+          f"TRANSFER_NODE_ID={node.id}, PUBLIC_URL={node.public_url}. ",
+          f"expected_file_name={task.original_filename}, content_type={task.content_type}, expected_size={task.expected_size}.");
     return TaskCreated(
         task_id=task_id,
         status=TaskStatus.CREATED,
@@ -301,6 +303,9 @@ def update_task_status(
 def _task_view(task: ReconstructionTask) -> TaskView:
     return TaskView(
         task_id=task.id,
+        original_filename=task.original_filename,
+        content_type=task.content_type,
+        file_expected_size_MB= task.expected_size/1024/1024 if task.expected_size else task.expected_size,  # Convert bytes to MB
         status=TaskStatus(task.status),
         progress=task.progress,
         current_stage=task.current_stage,

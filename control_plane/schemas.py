@@ -29,6 +29,9 @@ class TaskCreated(BaseModel):
 
 class TaskView(BaseModel):
     task_id: str
+    original_filename: str | None
+    content_type: str | None
+    file_expected_size_MB:float | None  # Convert bytes to MB
     status: TaskStatus
     progress: float
     current_stage: str
