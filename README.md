@@ -114,20 +114,17 @@ python -m unittest discover -s tests -v
 # 启动control_plane节点
 ```
 python3 -m uvicorn control_plane.main:app --host 0.0.0.0 --port 13000 --reload --no-access-log
-or python -m.......
 ```
 
 
 # 启动transfer_node节点
 ```
 python3 -m uvicorn transfer_node.main:app --host 0.0.0.0 --port 13001 --reload --log-level info
-or python -m.......
 ```
 
 # 启动compute_node节点
 ```
 python3 -m uvicorn compute_node.main:app --host 0.0.0.0 --port 14000 --reload --log-level info
-or python -m.......
 ```
 
 # 启动 web ui 用户界面
