@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import APIKeyHeader
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import delete, select
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from common.security import create_upload_token
@@ -184,23 +184,57 @@ def get_task(task_id: str, db: Session = Depends(get_db)) -> TaskView:
 
 @app.post("/internal/nodes/heartbeat", dependencies=[Depends(require_internal_key)])
 def node_heartbeat(body: NodeHeartbeat, db: Session = Depends(get_db)) -> dict[str, str]:
+    public_url = str(body.public_url).rstrip("/")
     node = db.get(TransferNode, body.node_id)
     previous_heartbeat = node.last_heartbeat if node is not None else None
-    if node is None:
-        node = TransferNode(id=body.node_id, public_url=str(body.public_url).rstrip("/"))
+    is_new_node = node is None
+    previous_public_url = node.public_url if node is not None else None
+    if is_new_node:
+        node = TransferNode(id=body.node_id, public_url=public_url)
         db.add(node)
+
+    def apply_heartbeat(target: TransferNode) -> None:
+        target.public_url = public_url
+        target.active = True
+        target.draining = body.draining
+        target.current_uploads = body.current_uploads
+        target.max_uploads = body.max_uploads
+        target.pending_tasks = body.pending_tasks
+        target.network_usage_percent = body.network_usage_percent
+        target.disk_usage_percent = body.disk_usage_percent
+        target.last_heartbeat = utcnow()
+
+    apply_heartbeat(node)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        if not is_new_node:
+            raise
+
+        # Another heartbeat may have inserted the same node after our initial
+        # lookup. Reload that row and apply this heartbeat as an update.
+        node = db.get(TransferNode, body.node_id)
+        if node is None:
+            raise
+        is_new_node = False
+        previous_heartbeat = node.last_heartbeat
+        previous_public_url = node.public_url
+        apply_heartbeat(node)
+        db.commit()
+
+    if not is_new_node and previous_public_url != public_url:
+        print(datetime.now());
+        logger.warning(
+            "Transfer node public URL changed: transfer_node_id=%s, old_public_url=%s, new_public_url=%s",
+            body.node_id,
+            previous_public_url,
+            public_url,
+        )
+
+    if is_new_node:
         print(datetime.now());
         print(f"TRANSFER_NODE_ID={body.node_id}, heartbeat connection established:  PUBLIC_URL={body.public_url}");
-    node.public_url = str(body.public_url).rstrip("/")
-    node.active = True
-    node.draining = body.draining
-    node.current_uploads = body.current_uploads
-    node.max_uploads = body.max_uploads
-    node.pending_tasks = body.pending_tasks
-    node.network_usage_percent = body.network_usage_percent
-    node.disk_usage_percent = body.disk_usage_percent
-    node.last_heartbeat = utcnow()
-    db.commit()
     if previous_heartbeat is not None:
         if previous_heartbeat.tzinfo is None:
             previous_heartbeat = previous_heartbeat.replace(tzinfo=timezone.utc)
