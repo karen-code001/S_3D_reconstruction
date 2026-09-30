@@ -8,7 +8,7 @@ from datetime import datetime
 from urllib.parse import parse_qs
 
 import httpx
-from fastapi import BackgroundTasks, Depends, FastAPI, File, Header, HTTPException, Query, UploadFile, status
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Header, HTTPException, Query, Request, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
@@ -375,7 +375,11 @@ class ComputeProgress(BaseModel):
 
 
 @app.post("/internal/progress/{task_id}", dependencies=[Depends(require_internal_key)])
-async def relay_compute_progress(task_id: str, body: ComputeProgress) -> dict[str, object]:
+async def relay_compute_progress(
+    task_id: str,
+    body: ComputeProgress,
+    request: Request,
+) -> dict[str, object]:
     if body.status not in {
         TaskStatus.PROCESSING,
         TaskStatus.PACKAGING,
@@ -383,6 +387,19 @@ async def relay_compute_progress(task_id: str, body: ComputeProgress) -> dict[st
         TaskStatus.FAILED,
     }:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="unsupported compute status")
+    compute_node_id = settings.compute_node_id_for_host(request.client.host if request.client else None)
+    if compute_node_id is None:
+        logger.warning(
+            "Could not map compute progress source host to TRANSFER_COMPUTE_NODES: task_id=%s host=%s",
+            task_id,
+            request.client.host if request.client else None,
+        )
+    progress_fields = {
+        "error_code": body.error_code,
+        "error_message": body.error_message,
+    }
+    if compute_node_id is not None:
+        progress_fields["compute_node_id"] = compute_node_id
     await report_status(
         app.state.client,
         settings,
@@ -390,9 +407,7 @@ async def relay_compute_progress(task_id: str, body: ComputeProgress) -> dict[st
         body.status,
         body.progress,
         body.stage,
-        compute_node_id=body.compute_node_id,
-        error_code=body.error_code,
-        error_message=body.error_message,
+        **progress_fields,
     )
     return {"task_id": task_id, "accepted": True}
 

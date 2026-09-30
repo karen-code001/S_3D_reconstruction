@@ -1,9 +1,10 @@
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
+import socket
+from urllib.parse import urlparse
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
 
 @dataclass(frozen=True)
 class ComputeTarget:
@@ -44,6 +45,29 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [item.strip() for item in self.cors_origins.split(",") if item.strip()]
+    
+    def compute_node_id_for_host(self, host: str | None) -> str | None:
+        """Map an incoming compute-node address to the configured node id."""
+        if not host:
+            return None
+        for target in self.compute_targets:
+            target_host = urlparse(target.base_url).hostname
+            if not target_host:
+                continue
+            if host == target_host:
+                return target.node_id
+            try:
+                addresses = {
+                    address[4][0]
+                    for address in socket.getaddrinfo(target_host, None, type=socket.SOCK_STREAM)
+                }
+            except OSError:
+                addresses = set()
+            if host in addresses:
+                return target.node_id
+        return None
+
+
 
 
 @lru_cache
