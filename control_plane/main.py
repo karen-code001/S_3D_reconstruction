@@ -6,7 +6,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import httpx
-from fastapi import Depends, FastAPI, HTTPException, Security, status
+from fastapi import Depends, FastAPI, HTTPException, Query, Security, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import APIKeyHeader
 from fastapi.staticfiles import StaticFiles
@@ -19,7 +19,7 @@ from common.status import ALLOWED_TRANSITIONS, TERMINAL_STATUSES, TaskStatus
 
 from .config import Settings, get_settings
 from .database import Base, SessionLocal, engine, get_db
-from .load_balancer import NodeSnapshot, choose_transfer_node, is_assignable
+from .load_balancer import NodeSnapshot, _as_utc, choose_transfer_node, is_assignable
 from .models import ReconstructionTask, TransferNode, utcnow
 from .schemas import (
     ComputeNodeStatus,
@@ -167,6 +167,17 @@ def create_task(
         upload_expires_at=expires_at,
         transfer_node_id=selected.id,
     )
+
+
+@app.get("/api/v1/tasks", response_model=list[TaskView])
+def list_recent_tasks(
+    limit: int = Query(default=100, ge=1, le=500),
+    db: Session = Depends(get_db),
+) -> list[TaskView]:
+    tasks = db.scalars(
+        select(ReconstructionTask).order_by(ReconstructionTask.created_at.desc()).limit(limit)
+    ).all()
+    return [_task_view(task) for task in tasks]
 
 
 @app.get("/api/v1/tasks/{task_id}", response_model=TaskView)
@@ -426,9 +437,9 @@ def _task_view(task: ReconstructionTask) -> TaskView:
         result_url=task.result_url,
         error_code=task.error_code,
         error_message=task.error_message,
-        created_at=task.created_at,
-        updated_at=task.updated_at,
-        completed_at=task.completed_at,
+        created_at=_as_utc(task.created_at),
+        updated_at=_as_utc(task.updated_at),
+        completed_at=_as_utc(task.completed_at) if task.completed_at else None,
     )
 
 
