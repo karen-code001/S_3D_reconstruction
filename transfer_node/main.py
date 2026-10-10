@@ -157,7 +157,8 @@ async def lifespan(app: FastAPI):
     (settings.storage_root / "results").mkdir(parents=True, exist_ok=True)
     tunnels = TunnelSupervisor(settings.ssh_tunnel_hosts, settings.ssh_tunnel_retry_seconds)
     tunnels.start()
-    app.state.client = httpx.AsyncClient(timeout=10)
+    # Internal traffic only; a Windows system proxy (e.g. Clash) must not intercept 127.0.0.1 tunnels.
+    app.state.client = httpx.AsyncClient(timeout=10, trust_env=False)
     heartbeat = asyncio.create_task(heartbeat_loop(app))
     dispatcher = asyncio.create_task(dispatch_loop(app))
     yield

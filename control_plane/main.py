@@ -240,7 +240,7 @@ async def list_compute_node_status(config: Settings = Depends(get_settings)) -> 
             if isinstance(item, dict) and item.get("node_id")
         ]
 
-    async with httpx.AsyncClient(timeout=8) as client:
+    async with httpx.AsyncClient(timeout=8, trust_env=False) as client:
         groups = await asyncio.gather(*(query(client, tid, url) for tid, url in transfers))
     return [node for group in groups for node in group]
 
