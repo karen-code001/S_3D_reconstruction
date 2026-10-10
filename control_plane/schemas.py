@@ -66,6 +66,16 @@ class TransferNodeStatus(BaseModel):
     disk_usage_percent: float
 
 
+class ComputeNodeStatus(BaseModel):
+    node_id: str
+    transfer_node_id: str
+    reachable: bool
+    available: bool
+    active_jobs: int | None = None
+    capacity: int | None = None
+    reason: str | None = None
+
+
 class TaskStatusUpdate(BaseModel):
     node_id: str
     status: TaskStatus

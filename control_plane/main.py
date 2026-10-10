@@ -5,6 +5,7 @@ import logging
 from pathlib import Path
 from uuid import uuid4
 
+import httpx
 from fastapi import Depends, FastAPI, HTTPException, Security, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import APIKeyHeader
@@ -20,7 +21,15 @@ from .config import Settings, get_settings
 from .database import Base, SessionLocal, engine, get_db
 from .load_balancer import NodeSnapshot, choose_transfer_node, is_assignable
 from .models import ReconstructionTask, TransferNode, utcnow
-from .schemas import NodeHeartbeat, TaskCreate, TaskCreated, TaskStatusUpdate, TaskView, TransferNodeStatus
+from .schemas import (
+    ComputeNodeStatus,
+    NodeHeartbeat,
+    TaskCreate,
+    TaskCreated,
+    TaskStatusUpdate,
+    TaskView,
+    TransferNodeStatus,
+)
 
 logger = logging.getLogger(__name__)
 internal_api_key_header = APIKeyHeader(name="X-Internal-Key", auto_error=False)
@@ -193,6 +202,47 @@ def list_transfer_node_status(
             )
         )
     return result
+
+
+@app.get("/api/v1/compute-nodes", response_model=list[ComputeNodeStatus])
+async def list_compute_node_status(config: Settings = Depends(get_settings)) -> list[ComputeNodeStatus]:
+    # Compute nodes sit behind transfer nodes (often via SSH tunnels), so ask each online transfer node.
+    cutoff = datetime.now(timezone.utc) - timedelta(seconds=config.node_stale_after_seconds)
+    with SessionLocal() as db:
+        transfers = [
+            (node.id, node.public_url)
+            for node in db.scalars(select(TransferNode).order_by(TransferNode.id)).all()
+            if node.last_heartbeat.replace(tzinfo=node.last_heartbeat.tzinfo or timezone.utc) >= cutoff
+        ]
+
+    async def query(client: httpx.AsyncClient, transfer_id: str, public_url: str) -> list[ComputeNodeStatus]:
+        try:
+            response = await client.get(
+                f"{public_url.rstrip('/')}/api/v1/compute-nodes/availability",
+                headers={"X-Internal-Key": config.internal_api_key},
+            )
+            response.raise_for_status()
+            nodes = response.json().get("nodes", [])
+        except (httpx.HTTPError, ValueError, AttributeError):
+            logger.warning("Failed to query compute nodes through TRANSFER_NODE_ID=%s", transfer_id)
+            return []
+        return [
+            ComputeNodeStatus(
+                node_id=item["node_id"],
+                transfer_node_id=transfer_id,
+                reachable=bool(item.get("reachable")),
+                available=bool(item.get("available")),
+                active_jobs=item.get("active_jobs"),
+                capacity=item.get("capacity"),
+                reason=item.get("reason"),
+            )
+            for item in nodes
+            if isinstance(item, dict) and item.get("node_id")
+        ]
+
+    async with httpx.AsyncClient(timeout=8) as client:
+        groups = await asyncio.gather(*(query(client, tid, url) for tid, url in transfers))
+    return [node for group in groups for node in group]
 
 
 @app.post("/internal/nodes/heartbeat", dependencies=[Depends(require_internal_key)])
