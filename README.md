@@ -81,6 +81,16 @@ python3 -m uvicorn compute_node.main:app --host 0.0.0.0 --port 8200
 $env:TRANSFER_COMPUTE_NODES="Server-1|http://127.0.0.1:8200|1"
 ```
 
+可通过 transfer node 查询所有已配置计算节点的实时可用性：
+
+```powershell
+Invoke-RestMethod http://localhost:8101/api/v1/compute-nodes/availability
+```
+
+接口返回 `available`（是否至少有一个节点可接收任务）以及 `nodes` 明细。每个节点包含
+`reachable`、`available`、`accepting_tasks`、`active_jobs`、`capacity`；不可用时还会返回
+`reason`。未配置计算节点时返回 `{"available": false, "nodes": []}`。
+
 实际三维重建逻辑位于 `compute_node/processor.py` 的 `run_reconstruction`，当前仅生成占位结果文件，可直接替换为 GPU 处理函数。
 
 ## 生产部署注意事项
@@ -133,6 +143,11 @@ python3 -m http.server 8088 -d web_UI
 or python -m.......
 ```
 
+# 通过ssh协议传输文件
+```
+scp /local/path/filename username@remote_ip(or alias):/remote/path/     一方要传输的文件路径在前   另一方目标存放目录在后
+（传输目录：在 scp 后加 -r 指示）
+```
 
 # 测试 指定端口 能否访问的命令   Windows PowerShell
 
@@ -149,8 +164,8 @@ Linux: curl "http://10.76.135.220:13001/health"
 
 
 # 通过ssh隧道，配置两台机器的 http 网络端口 转发
-# 本地转发 -L，用于网络服务在服务器上，映射为本地可访问
-# 远程转发 -R，用于网络服务在本地，映射为服务器端可访问
+# 本地转发 -L，LocalForward用于网络服务在服务器上，映射为本地可访问
+# 远程转发 -R，RemoteForward用于网络服务在本地，映射为服务器端可访问
 # -L/-R forwarded_address : service_address
 # -L/-R forwarded_ip:port : service_ip:port
 ```

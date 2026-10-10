@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 from common.security import TokenError, verify_upload_token
 from common.status import TaskStatus
 
-from .clients import choose_compute_node, report_status, send_job
+from .clients import choose_compute_node, query_compute_node_availability, report_status, send_job
 from .config import Settings, get_settings
 from .storage import UploadTooLarge, store_upload, task_source
 
@@ -221,7 +221,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
     allow_credentials=True,
-    allow_methods=["POST", "OPTIONS"],
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Internal-Key"],
 )
 
@@ -238,6 +238,19 @@ def health() -> dict[str, object]:
         "node_id": settings.node_id,
         "active_uploads": active_uploads,
         "max_uploads": settings.max_concurrent_uploads,
+    }
+
+
+@app.get(
+    "/api/v1/compute-nodes/availability",
+    dependencies=[Depends(require_internal_key)],
+)
+async def compute_nodes_availability() -> dict[str, object]:
+    """Return whether at least one configured compute node can accept a task."""
+    nodes = await query_compute_node_availability(app.state.client, settings.compute_targets)
+    return {
+        "available": any(node.available for node in nodes),
+        "nodes": [node.to_dict() for node in nodes],
     }
 
 
@@ -387,19 +400,19 @@ async def relay_compute_progress(
         TaskStatus.FAILED,
     }:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="unsupported compute status")
-    compute_node_id = settings.compute_node_id_for_host(request.client.host if request.client else None)
-    if compute_node_id is None:
-        logger.warning(
-            "Could not map compute progress source host to TRANSFER_COMPUTE_NODES: task_id=%s host=%s",
-            task_id,
-            request.client.host if request.client else None,
-        )
+    # compute_node_id = settings.compute_node_id_for_host(request.client.host if request.client else None)
+    # if compute_node_id is None:
+    #     logger.warning(
+    #         "Could not map compute progress source host to TRANSFER_COMPUTE_NODES: task_id=%s host=%s",
+    #         task_id,
+    #         request.client.host if request.client else None,
+    #     )
     progress_fields = {
         "error_code": body.error_code,
         "error_message": body.error_message,
     }
-    if compute_node_id is not None:
-        progress_fields["compute_node_id"] = compute_node_id
+    # if compute_node_id is not None:
+    #     progress_fields["compute_node_id"] = compute_node_id
     await report_status(
         app.state.client,
         settings,
@@ -429,5 +442,6 @@ def root() -> dict[str, str]:
         "status": "ok",
         "docs": "/docs",
         "health": "/health",
+        "compute_nodes_availability": "/api/v1/compute-nodes/availability",
     }
 

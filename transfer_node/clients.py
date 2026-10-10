@@ -1,4 +1,5 @@
 import asyncio
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import httpx
@@ -6,6 +7,77 @@ import httpx
 from common.status import TaskStatus
 
 from .config import ComputeTarget, Settings
+
+
+@dataclass(frozen=True)
+class ComputeNodeAvailability:
+    node_id: str
+    base_url: str
+    reachable: bool
+    available: bool
+    accepting_tasks: bool = False
+    active_jobs: int | None = None
+    capacity: int | None = None
+    reason: str | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        return {key: value for key, value in asdict(self).items() if value is not None}
+
+
+async def probe_compute_node(
+    client: httpx.AsyncClient,
+    target: ComputeTarget,
+) -> ComputeNodeAvailability:
+    """Query one compute node and normalize its health response."""
+    try:
+        response = await client.get(f"{target.base_url}/health", timeout=3)
+        response.raise_for_status()
+        data = response.json()
+        if not isinstance(data, dict):
+            raise TypeError("health response must be a JSON object")
+
+        accepting_tasks = bool(data.get("accepting_tasks", True))
+        active_jobs = max(int(data.get("active_jobs", 0)), 0)
+        capacity = max(int(data.get("capacity", 1)), 0)
+        available = accepting_tasks and active_jobs < capacity
+        reason = None
+        if not accepting_tasks:
+            reason = "not_accepting_tasks"
+        elif active_jobs >= capacity:
+            reason = "at_capacity"
+        return ComputeNodeAvailability(
+            node_id=target.node_id,
+            base_url=target.base_url,
+            reachable=True,
+            available=available,
+            accepting_tasks=accepting_tasks,
+            active_jobs=active_jobs,
+            capacity=capacity,
+            reason=reason,
+        )
+    except httpx.HTTPStatusError:
+        return ComputeNodeAvailability(
+            node_id=target.node_id,
+            base_url=target.base_url,
+            reachable=True,
+            available=False,
+            reason="unhealthy_response",
+        )
+    except (httpx.HTTPError, ValueError, TypeError):
+        return ComputeNodeAvailability(
+            node_id=target.node_id,
+            base_url=target.base_url,
+            reachable=False,
+            available=False,
+            reason="unreachable_or_invalid_response",
+        )
+
+
+async def query_compute_node_availability(
+    client: httpx.AsyncClient,
+    targets: list[ComputeTarget],
+) -> list[ComputeNodeAvailability]:
+    return list(await asyncio.gather(*(probe_compute_node(client, target) for target in targets)))
 
 
 async def report_status(
@@ -29,29 +101,19 @@ async def report_status(
         json=payload,
         headers={"X-Internal-Key": settings.internal_api_key},
     )
+    print(f'report_status for task_id {task_id}: {payload} -> {response.status_code}');
     response.raise_for_status()
 
 
 async def choose_compute_node(client: httpx.AsyncClient, targets: list[ComputeTarget]) -> ComputeTarget | None:
-    async def probe(target: ComputeTarget):
-        try:
-            response = await client.get(f"{target.base_url}/health", timeout=3)
-            print(f"chosen compute_node: server_id:{target.node_id}, weight:{target.weight}, url:{target.base_url}");
-            print(f"response: {response}");
-            response.raise_for_status()
-            data = response.json()
-            print(f"data: {data}");
-            if not data.get("accepting_tasks", True):
-                return None
-            active = max(int(data.get("active_jobs", 0)), 0)
-            capacity = max(int(data.get("capacity", 1)), 1)
-            return ((active / capacity) / max(target.weight, 0.01), target.node_id, target)
-        except (httpx.HTTPError, ValueError, TypeError):
-            return None
-
-    results = await asyncio.gather(*(probe(target) for target in targets))
-    healthy = [result for result in results if result is not None]
-    return min(healthy, default=None)[2] if healthy else None
+    availability = await query_compute_node_availability(client, targets)
+    candidates = []
+    for target, node in zip(targets, availability):
+        if not node.available or node.active_jobs is None or node.capacity is None:
+            continue
+        score = (node.active_jobs / node.capacity) / max(target.weight, 0.01)
+        candidates.append((score, target.node_id, target))
+    return min(candidates, default=None)[2] if candidates else None
 
 
 async def send_job(
