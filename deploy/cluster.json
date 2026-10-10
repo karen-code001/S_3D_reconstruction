@@ -1,0 +1,38 @@
+{
+  "control_plane_url": "http://10.75.48.204:13000",
+  "upload_token_secret": "change-me-in-production",
+  "internal_api_key": "change-me-in-production",
+
+  "transfer_port": 13001,
+  "max_concurrent_uploads": 24,
+  "heartbeat_interval_seconds": 3,
+  "dispatch_interval_seconds": 2,
+  "storage_root": "./data/transfer",
+  "cors_origins": [
+    "null",
+    "http://10.75.48.204:13000",
+    "http://10.75.48.204:8088",
+    "http://localhost:8088",
+    "http://127.0.0.1:8088"
+  ],
+
+  "python_version": "3.11",
+  "python_installer_url": "https://mirrors.huaweicloud.com/python/3.11.9/python-3.11.9-amd64.exe",
+  "pip_index_url": "https://pypi.tuna.tsinghua.edu.cn/simple",
+
+  "ssh_hosts": [
+    {
+      "name": "dky_YX",
+      "host": "10.130.10.166",
+      "port": 30952,
+      "user": "root",
+      "compute_nodes": [
+        { "node_id": "Server-1", "remote_port": 14000, "local_port": 14001, "weight": 1 }
+      ]
+    }
+  ],
+
+  "transfer_nodes": {
+    "transfer_D613_Pub_Mobile": { "callback_port": 13001 }
+  }
+}
