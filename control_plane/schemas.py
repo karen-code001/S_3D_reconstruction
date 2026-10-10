@@ -56,6 +56,16 @@ class NodeHeartbeat(BaseModel):
     draining: bool = False
 
 
+class TransferNodeStatus(BaseModel):
+    node_id: str
+    online: bool
+    assignable: bool
+    seconds_since_heartbeat: int
+    current_uploads: int
+    max_uploads: int
+    disk_usage_percent: float
+
+
 class TaskStatusUpdate(BaseModel):
     node_id: str
     status: TaskStatus

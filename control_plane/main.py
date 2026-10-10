@@ -18,9 +18,9 @@ from common.status import ALLOWED_TRANSITIONS, TERMINAL_STATUSES, TaskStatus
 
 from .config import Settings, get_settings
 from .database import Base, SessionLocal, engine, get_db
-from .load_balancer import NodeSnapshot, choose_transfer_node
+from .load_balancer import NodeSnapshot, choose_transfer_node, is_assignable
 from .models import ReconstructionTask, TransferNode, utcnow
-from .schemas import NodeHeartbeat, TaskCreate, TaskCreated, TaskStatusUpdate, TaskView
+from .schemas import NodeHeartbeat, TaskCreate, TaskCreated, TaskStatusUpdate, TaskView, TransferNodeStatus
 
 logger = logging.getLogger(__name__)
 internal_api_key_header = APIKeyHeader(name="X-Internal-Key", auto_error=False)
@@ -117,21 +117,7 @@ def create_task(
     # Row locks prevent concurrent API workers from over-allocating the same node.
     # SQLite ignores this clause in local development; PostgreSQL honors it.
     rows = db.scalars(select(TransferNode).with_for_update()).all()
-    snapshots = [
-        NodeSnapshot(
-            id=n.id,
-            public_url=n.public_url,
-            active=n.active,
-            draining=n.draining,
-            current_uploads=n.current_uploads,
-            max_uploads=n.max_uploads,
-            pending_tasks=n.pending_tasks,
-            network_usage_percent=n.network_usage_percent,
-            disk_usage_percent=n.disk_usage_percent,
-            last_heartbeat=n.last_heartbeat,
-        )
-        for n in rows
-    ]
+    snapshots = [_snapshot(n) for n in rows]
     selected = choose_transfer_node(snapshots, config.node_stale_after_seconds)
     if selected is None:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="no healthy transfer node")
@@ -180,6 +166,33 @@ def get_task(task_id: str, db: Session = Depends(get_db)) -> TaskView:
     if task is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
     return _task_view(task)
+
+
+@app.get("/api/v1/transfer-nodes", response_model=list[TransferNodeStatus])
+def list_transfer_node_status(
+    db: Session = Depends(get_db),
+    config: Settings = Depends(get_settings),
+) -> list[TransferNodeStatus]:
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(seconds=config.node_stale_after_seconds)
+    result = []
+    for node in db.scalars(select(TransferNode).order_by(TransferNode.id)).all():
+        snapshot = _snapshot(node)
+        last_heartbeat = snapshot.last_heartbeat
+        if last_heartbeat.tzinfo is None:
+            last_heartbeat = last_heartbeat.replace(tzinfo=timezone.utc)
+        result.append(
+            TransferNodeStatus(
+                node_id=node.id,
+                online=last_heartbeat >= cutoff,
+                assignable=is_assignable(snapshot, cutoff),
+                seconds_since_heartbeat=max(0, int((now - last_heartbeat).total_seconds())),
+                current_uploads=node.current_uploads,
+                max_uploads=node.max_uploads,
+                disk_usage_percent=round(node.disk_usage_percent, 1),
+            )
+        )
+    return result
 
 
 @app.post("/internal/nodes/heartbeat", dependencies=[Depends(require_internal_key)])
@@ -332,6 +345,21 @@ def update_task_status(
         task.retry_count += 1
     db.commit()
     return _task_view(task)
+
+
+def _snapshot(node: TransferNode) -> NodeSnapshot:
+    return NodeSnapshot(
+        id=node.id,
+        public_url=node.public_url,
+        active=node.active,
+        draining=node.draining,
+        current_uploads=node.current_uploads,
+        max_uploads=node.max_uploads,
+        pending_tasks=node.pending_tasks,
+        network_usage_percent=node.network_usage_percent,
+        disk_usage_percent=node.disk_usage_percent,
+        last_heartbeat=node.last_heartbeat,
+    )
 
 
 def _task_view(task: ReconstructionTask) -> TaskView:

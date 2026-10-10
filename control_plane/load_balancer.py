@@ -33,16 +33,18 @@ def choose_transfer_node(
 ) -> NodeSnapshot | None:
     now = now or datetime.now(timezone.utc)
     cutoff = now - timedelta(seconds=stale_after_seconds)
-    eligible = [
-        node
-        for node in nodes
-        if node.active
+    eligible = [node for node in nodes if is_assignable(node, cutoff)]
+    return min(eligible, key=lambda item: (node_score(item), item.id), default=None)
+
+
+def is_assignable(node: NodeSnapshot, cutoff: datetime) -> bool:
+    return (
+        node.active
         and not node.draining
         and node.current_uploads < node.max_uploads
         and node.disk_usage_percent < 95
         and _as_utc(node.last_heartbeat) >= cutoff
-    ]
-    return min(eligible, key=lambda item: (node_score(item), item.id), default=None)
+    )
 
 
 def _as_utc(value: datetime) -> datetime:
