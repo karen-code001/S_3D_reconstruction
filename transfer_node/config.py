@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     heartbeat_interval_seconds: int = 10
     dispatch_interval_seconds: int = 5
     compute_nodes: str = ""
+    ssh_tunnels: str = ""
+    ssh_tunnel_retry_seconds: int = 10
     cors_origins: str = "null, http://localhost:8000,http://127.0.0.1:8000,http://localhost:13000"
 
     model_config = SettingsConfigDict(env_prefix="TRANSFER_", env_file=".env", extra="ignore")
@@ -41,6 +43,10 @@ class Settings(BaseSettings):
                 raise ValueError("TRANSFER_COMPUTE_NODES entries must be node_id|url or node_id|url|weight")
             targets.append(ComputeTarget(parts[0], parts[1].rstrip("/"), float(parts[2]) if len(parts) == 3 else 1.0))
         return targets
+
+    @property
+    def ssh_tunnel_hosts(self) -> list[str]:
+        return [item.strip() for item in self.ssh_tunnels.split(",") if item.strip()]
 
     @property
     def cors_origin_list(self) -> list[str]:

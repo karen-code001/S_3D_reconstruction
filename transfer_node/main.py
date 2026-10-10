@@ -19,6 +19,7 @@ from common.status import TaskStatus
 from .clients import choose_compute_node, query_compute_node_availability, report_status, send_job
 from .config import Settings, get_settings
 from .storage import UploadTooLarge, store_upload, task_source
+from .tunnels import TunnelSupervisor
 
 
 settings = get_settings()
@@ -154,6 +155,8 @@ async def dispatch_task(app: FastAPI, task_id: str, source: Path) -> None:
 async def lifespan(app: FastAPI):
     (settings.storage_root / "inbox").mkdir(parents=True, exist_ok=True)
     (settings.storage_root / "results").mkdir(parents=True, exist_ok=True)
+    tunnels = TunnelSupervisor(settings.ssh_tunnel_hosts, settings.ssh_tunnel_retry_seconds)
+    tunnels.start()
     app.state.client = httpx.AsyncClient(timeout=10)
     heartbeat = asyncio.create_task(heartbeat_loop(app))
     dispatcher = asyncio.create_task(dispatch_loop(app))
@@ -164,6 +167,7 @@ async def lifespan(app: FastAPI):
         with suppress(asyncio.CancelledError):
             await worker
     await app.state.client.aclose()
+    await asyncio.to_thread(tunnels.stop)
 
 
 app = FastAPI(title="3D Reconstruction Transfer Node", version="0.1.0", lifespan=lifespan)
