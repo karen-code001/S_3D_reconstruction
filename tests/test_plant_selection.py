@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from common.plants import PlantType, yolo_ini_for
 from common.security import create_upload_token, verify_upload_token
-from control_plane.database import Base, ensure_plant_type_column
+from control_plane.database import Base, ensure_task_columns
 from control_plane.models import TransferNode
 from control_plane.schemas import TaskCreate
 from control_plane.config import Settings as ControlSettings
@@ -41,10 +41,10 @@ class PlantTaskTests(unittest.TestCase):
         with engine.begin() as c:
             c.execute(text('CREATE TABLE reconstruction_tasks (id TEXT PRIMARY KEY)'))
             c.execute(text("INSERT INTO reconstruction_tasks (id) VALUES ('old-task')"))
-        ensure_plant_type_column(engine)
-        ensure_plant_type_column(engine)
+        ensure_task_columns(engine)
+        ensure_task_columns(engine)
         with engine.connect() as c:
-            self.assertEqual(c.execute(text('SELECT id, plant_type FROM reconstruction_tasks')).one(), ('old-task', None))
+            self.assertEqual(c.execute(text('SELECT id, plant_type, task_name, group_name FROM reconstruction_tasks')).one(), ('old-task', None, None, None))
         engine.dispose()
 
     def test_create_persists_selection_and_signs_upload_claim(self):
@@ -63,6 +63,21 @@ class PlantTaskTests(unittest.TestCase):
                     row = db.get(ReconstructionTask, created.task_id)
                     self.assertEqual(row.plant_type, plant)
                     self.assertEqual(_task_view(row).yolo_ini, ini)
+        engine.dispose()
+
+    def test_create_persists_task_name_and_group(self):
+        engine = create_engine('sqlite://')
+        Base.metadata.create_all(engine)
+        config = ControlSettings(_env_file=None)
+        with Session(engine) as db:
+            db.add(TransferNode(id='transfer-1', public_url='http://transfer.test', max_uploads=8))
+            db.commit()
+            created = create_task(TaskCreate(filename='video.mp4', task_name='植物多视角视频采集', group_name='05'), db, config)
+            view = _task_view(db.get(ReconstructionTask, created.task_id))
+            self.assertEqual((view.task_name, view.group_name), ('植物多视角视频采集', '05'))
+            legacy = create_task(TaskCreate(filename='video.mp4'), db, config)
+            view = _task_view(db.get(ReconstructionTask, legacy.task_id))
+            self.assertEqual((view.task_name, view.group_name), (None, None))
         engine.dispose()
 
     def test_unknown_crop_is_rejected_and_legacy_client_stays_unspecified(self):

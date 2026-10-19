@@ -32,6 +32,8 @@ class ReconstructionTask(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     user_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
     plant_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    task_name: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    group_name: Mapped[str | None] = mapped_column(String(50), nullable=True)
     original_filename: Mapped[str] = mapped_column(String(500))
     content_type: Mapped[str | None] = mapped_column(String(200), nullable=True)
     expected_size: Mapped[int | None] = mapped_column(Integer, nullable=True)

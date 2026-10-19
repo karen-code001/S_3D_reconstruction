@@ -13,20 +13,28 @@ connect_args = {"check_same_thread": False} if database_url.startswith("sqlite")
 engine = create_engine(database_url, pool_pre_ping=True, connect_args=connect_args)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
+UPGRADE_COLUMNS = {
+    "plant_type": "VARCHAR(20)",
+    "task_name": "VARCHAR(80)",
+    "group_name": "VARCHAR(50)",
+}
 
-def ensure_plant_type_column(bind=engine):
+
+def ensure_task_columns(bind=engine):
     """Upgrade existing databases without changing legacy task records."""
     with bind.begin() as connection:
         if bind.dialect.name == "postgresql":
-            connection.execute(text(
-                "ALTER TABLE reconstruction_tasks ADD COLUMN IF NOT EXISTS plant_type VARCHAR(20)"
-            ))
+            for name, column_type in UPGRADE_COLUMNS.items():
+                connection.execute(text(
+                    f"ALTER TABLE reconstruction_tasks ADD COLUMN IF NOT EXISTS {name} {column_type}"
+                ))
         else:
             if bind.dialect.name == "sqlite":
                 connection.exec_driver_sql("BEGIN IMMEDIATE")
             columns = {column["name"] for column in inspect(connection).get_columns("reconstruction_tasks")}
-            if "plant_type" not in columns:
-                connection.execute(text("ALTER TABLE reconstruction_tasks ADD COLUMN plant_type VARCHAR(20)"))
+            for name, column_type in UPGRADE_COLUMNS.items():
+                if name not in columns:
+                    connection.execute(text(f"ALTER TABLE reconstruction_tasks ADD COLUMN {name} {column_type}"))
 
 
 def get_db():
@@ -35,4 +43,3 @@ def get_db():
         yield db
     finally:
         db.close()
-

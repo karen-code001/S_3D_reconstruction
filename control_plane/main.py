@@ -19,7 +19,7 @@ from common.plants import yolo_ini_for
 from common.status import ALLOWED_TRANSITIONS, TERMINAL_STATUSES, TaskStatus
 
 from .config import Settings, get_settings
-from .database import Base, SessionLocal, engine, get_db, ensure_plant_type_column
+from .database import Base, SessionLocal, engine, get_db, ensure_task_columns
 from .load_balancer import NodeSnapshot, _as_utc, choose_transfer_node, is_assignable
 from .models import ReconstructionTask, TransferNode, utcnow
 from .schemas import (
@@ -69,7 +69,7 @@ async def heartbeat_monitor_loop() -> None:
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     Base.metadata.create_all(bind=engine)
-    ensure_plant_type_column()
+    ensure_task_columns()
     heartbeat_monitor = asyncio.create_task(heartbeat_monitor_loop())
     try:
         yield
@@ -148,6 +148,8 @@ def create_task(
         id=task_id,
         original_filename=body.filename,
         plant_type=body.plant_type,
+        task_name=body.task_name,
+        group_name=body.group_name,
         content_type=body.content_type,
         expected_size=body.size,
         expected_sha256=body.sha256,
@@ -433,6 +435,8 @@ def _task_view(task: ReconstructionTask) -> TaskView:
     return TaskView(
         plant_type=task.plant_type,
         yolo_ini=yolo_ini_for(task.plant_type),
+        task_name=task.task_name,
+        group_name=task.group_name,
         task_id=task.id,
         original_filename=task.original_filename,
         content_type=task.content_type,
