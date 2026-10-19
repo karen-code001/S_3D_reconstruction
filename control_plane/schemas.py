@@ -3,9 +3,11 @@ from datetime import datetime
 from pydantic import BaseModel, Field, HttpUrl, field_validator
 
 from common.status import TaskStatus
+from common.plants import PlantType
 
 
 class TaskCreate(BaseModel):
+    plant_type: PlantType | None = None
     filename: str = Field(min_length=1, max_length=500)
     content_type: str | None = Field(default=None, max_length=200)
     size: int | None = Field(default=None, gt=0)
@@ -20,6 +22,8 @@ class TaskCreate(BaseModel):
 
 
 class TaskCreated(BaseModel):
+    plant_type: PlantType | None = None
+    yolo_ini: str | None = None
     task_id: str
     status: TaskStatus
     upload_url: str
@@ -28,6 +32,8 @@ class TaskCreated(BaseModel):
 
 
 class TaskView(BaseModel):
+    plant_type: PlantType | None = None
+    yolo_ini: str | None = None
     task_id: str
     original_filename: str | None
     content_type: str | None

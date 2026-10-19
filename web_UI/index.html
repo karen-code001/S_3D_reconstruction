@@ -52,6 +52,14 @@
           <strong>拖放视频到这里</strong><span>或点击选择文件</span><small>支持 MP4、MOV、AVI、MKV、WebM 等常见格式</small>
         </label>
         <div id="fileCard" class="file-card" hidden><div class="file-type">Video</div><div class="file-meta"><strong id="fileName"></strong><span id="fileSize"></span></div><button id="removeFile" type="button" aria-label="移除文件">×</button></div>
+        <label class="field" for="plantType">作物类型（必选）
+          <select id="plantType" required>
+            <option value="" selected disabled>请选择作物</option>
+            <option value="tomato">番茄</option>
+            <option value="eggplant">茄子</option>
+            <option value="pepper">辣椒</option>
+          </select>
+        </label>
         <label class="field">任务备注（可选）<input id="taskNote" maxlength="100" placeholder="例如：番茄植株 2026-09" /></label>
         <button id="uploadButton" class="primary-button" type="button" disabled><span>上传视频并创建任务</span><b>→</b></button>
         <div id="uploadProgress" class="progress-wrap" hidden><div class="progress-label"><span>正在上传视频</span><b id="uploadPercent">0%</b></div><div class="progress-track"><i id="uploadBar"></i></div></div>

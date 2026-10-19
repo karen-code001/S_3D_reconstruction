@@ -15,10 +15,11 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from common.security import create_upload_token
+from common.plants import yolo_ini_for
 from common.status import ALLOWED_TRANSITIONS, TERMINAL_STATUSES, TaskStatus
 
 from .config import Settings, get_settings
-from .database import Base, SessionLocal, engine, get_db
+from .database import Base, SessionLocal, engine, get_db, ensure_plant_type_column
 from .load_balancer import NodeSnapshot, _as_utc, choose_transfer_node, is_assignable
 from .models import ReconstructionTask, TransferNode, utcnow
 from .schemas import (
@@ -68,6 +69,7 @@ async def heartbeat_monitor_loop() -> None:
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     Base.metadata.create_all(bind=engine)
+    ensure_plant_type_column()
     heartbeat_monitor = asyncio.create_task(heartbeat_monitor_loop())
     try:
         yield
@@ -140,10 +142,12 @@ def create_task(
         config.upload_token_ttl_seconds,
         expected_size=body.size,
         expected_sha256=body.sha256,
+        plant_type=body.plant_type,
     )
     task = ReconstructionTask(
         id=task_id,
         original_filename=body.filename,
+        plant_type=body.plant_type,
         content_type=body.content_type,
         expected_size=body.size,
         expected_sha256=body.sha256,
@@ -161,6 +165,8 @@ def create_task(
           f"TRANSFER_NODE_ID={node.id}, PUBLIC_URL={node.public_url}. ",
           f"expected_file_name={task.original_filename}, content_type={task.content_type}, expected_size={task.expected_size}.");
     return TaskCreated(
+        plant_type=body.plant_type,
+        yolo_ini=yolo_ini_for(body.plant_type),
         task_id=task_id,
         status=TaskStatus.CREATED,
         upload_url=f"{selected.public_url.rstrip('/')}/api/v1/uploads/{task_id}?token={token}",
@@ -425,6 +431,8 @@ def _snapshot(node: TransferNode) -> NodeSnapshot:
 
 def _task_view(task: ReconstructionTask) -> TaskView:
     return TaskView(
+        plant_type=task.plant_type,
+        yolo_ini=yolo_ini_for(task.plant_type),
         task_id=task.id,
         original_filename=task.original_filename,
         content_type=task.content_type,

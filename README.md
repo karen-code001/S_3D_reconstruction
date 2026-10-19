@@ -173,3 +173,26 @@ ssh -N -p 30952 -L 127.0.0.1:14001:127.0.0.1:14000 dky_YX(alias in .ssh/config )
 ssh -N -p 30952 -L 127.0.0.1:14001:127.0.0.1:14000 -R 127.0.0.1:13001:127.0.0.1:13001 -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 dky_YX
 ssh -N -p 30952 -L 127.0.0.1:14002:127.0.0.1:14000 -R 127.0.0.1:13001:127.0.0.1:13001 -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 dky_YX2
 ```
+
+
+## 作物选择与 YOLO ini
+
+上传页面要求先选择番茄、茄子或辣椒；作物显示在本机最近任务中。创建任务的 `plant_type` 使用以下值，ini 文件名由服务端白名单确定：
+
+- `tomato`（番茄）：`20260411-Tomato-006.ini`
+- `eggplant`（茄子）：`20261020-eggplant-class.ini`
+- `pepper`（辣椒）：`20260720-lajiao.ini`
+
+创建任务示例：
+
+```json
+{"filename":"video.mp4","content_type":"video/mp4","size":12345,"plant_type":"tomato"}
+```
+
+创建结果和任务查询返回 `plant_type` 与 `yolo_ini`。上传令牌签名保护作物选择，中转节点在 `.task.json` 保存选择以支持重启后的派发，再向计算节点传递 `plant_type` 和 `yolo_ini`。计算节点拒绝不匹配的文件名，并把经过验证的选择作为关键字参数传入 `run_reconstruction`。
+
+**计算节点的 `processor.py` 目前仍为占位实现，不运行 YOLO，也不加载 ini。** 接入真实流水线时，应在计算节点的配置目录内解析 `yolo_ini` 文件名并实际加载相应文件。这次修改没有创建或替换上述三个 ini 文件。
+
+需要同时更新并重启主控、中转及计算节点；混用旧版节点可能丢失作物参数。主控启动时自动为已有任务表补充可空的 `plant_type` 字段，保留旧记录。旧 API 调用及旧任务未指定作物时继续使用 `null`，不默认猜测作物。
+
+验证：`python -m unittest discover -s tests -v`；`node tests/test_plant_ui.js`。

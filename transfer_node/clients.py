@@ -1,10 +1,12 @@
 import asyncio
+import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import httpx
 
 from common.status import TaskStatus
+from common.plants import PlantType, yolo_ini_for
 
 from .config import ComputeTarget, Settings
 
@@ -123,10 +125,17 @@ async def send_job(
     task_id: str,
     source: Path,
 ) -> None:
+    metadata_path = source.parent / ".task.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8")) if metadata_path.exists() else {}
+    plant_type = metadata.get("plant_type")
+    plant_fields = {}
+    if plant_type is not None:
+        plant_fields = {"plant_type": PlantType(plant_type).value, "yolo_ini": yolo_ini_for(plant_type)}
     with source.open("rb") as input_file:
         response = await client.post(
             f"{target.base_url}/internal/jobs/{task_id}",
             data={
+                **plant_fields,
                 "callback_url": f"{settings.callback_url.rstrip('/')}/internal/results/{task_id}",
                 "progress_url": f"{settings.callback_url.rstrip('/')}/internal/progress/{task_id}",
             },

@@ -135,7 +135,7 @@ async def dispatch_task(app: FastAPI, task_id: str, source: Path) -> None:
             "compute_accepted",
             compute_node_id=target.node_id,
         )
-    except (httpx.HTTPError, OSError) as exc:
+    except (httpx.HTTPError, OSError, ValueError) as exc:
         with suppress(httpx.HTTPError):
             await report_status(
                 app.state.client,
@@ -327,6 +327,11 @@ async def upload_video(
             actual_size=stored.size,
             actual_sha256=stored.sha256,
         )
+        # Persist signed task metadata before making the upload dispatchable.
+        metadata = stored.path.parent / ".task.json"
+        temporary = stored.path.parent / ".task.json.tmp"
+        temporary.write_text(json.dumps({"plant_type": claims.plant_type}), encoding="utf-8")
+        temporary.replace(metadata)
         (stored.path.parent / ".ready").touch()
         background_tasks.add_task(dispatch_task, app, task_id, stored.path)
         return {"task_id": task_id, "status": TaskStatus.UPLOADED, "size": stored.size, "sha256": stored.sha256}
