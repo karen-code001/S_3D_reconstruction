@@ -1,6 +1,6 @@
 (() => {
   'use strict';
-  const PLANT_NAMES = {tomato:'番茄',eggplant:'茄子',pepper:'辣椒'};
+  const PLANT_NAMES = {tomato:'番茄',eggplant:'茄子',pepper:'辣椒',rapeseed:'油菜'};
   const DEFAULTS = {"upload":"/api/v1/tasks","status":"/api/v1/tasks/{task_id}","download":"/api/v1/tasks/{task_id}"};
   const FALLBACKS = {
     upload: ['/api/v1/tasks'],

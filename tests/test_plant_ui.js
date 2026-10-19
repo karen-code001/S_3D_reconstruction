@@ -35,4 +35,4 @@ async function run(plant) {
   assert.equal(JSON.parse(saved.get('recon-recent-tasks'))[0].plant_type,plant);
   assert.equal(get('plantType').disabled,false);
 }
-(async()=>{for(const crop of ['tomato','eggplant','pepper']) await run(crop);console.log('Plant selection UI: 3 crops passed');})().catch(e=>{console.error(e);process.exitCode=1;});
+(async()=>{for(const crop of ['tomato','eggplant','pepper','rapeseed']) await run(crop);console.log('Plant selection UI: 4 crops passed');})().catch(e=>{console.error(e);process.exitCode=1;});
