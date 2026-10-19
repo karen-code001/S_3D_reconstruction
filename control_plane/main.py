@@ -408,6 +408,8 @@ def update_task_status(
     task.error_message = body.error_message
     task.version += 1
     task.updated_at = utcnow()
+    if body.status == TaskStatus.UPLOADED and task.uploaded_at is None:
+        task.uploaded_at = task.updated_at
     if body.status in TERMINAL_STATUSES:
         task.completed_at = utcnow()
     if body.status == TaskStatus.RETRYING and old_status != TaskStatus.RETRYING:
@@ -451,6 +453,7 @@ def _task_view(task: ReconstructionTask) -> TaskView:
         error_message=task.error_message,
         created_at=_as_utc(task.created_at),
         updated_at=_as_utc(task.updated_at),
+        uploaded_at=_as_utc(task.uploaded_at) if task.uploaded_at else None,
         completed_at=_as_utc(task.completed_at) if task.completed_at else None,
     )
 

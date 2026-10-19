@@ -45,7 +45,7 @@ class PlantTaskTests(unittest.TestCase):
         ensure_task_columns(engine)
         ensure_task_columns(engine)
         with engine.connect() as c:
-            self.assertEqual(c.execute(text('SELECT id, plant_type, task_name, group_name FROM reconstruction_tasks')).one(), ('old-task', None, None, None))
+            self.assertEqual(c.execute(text('SELECT id, plant_type, task_name, group_name, uploaded_at FROM reconstruction_tasks')).one(), ('old-task', None, None, None, None))
         engine.dispose()
 
     def test_create_persists_selection_and_signs_upload_claim(self):

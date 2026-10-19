@@ -17,6 +17,7 @@ UPGRADE_COLUMNS = {
     "plant_type": "VARCHAR(20)",
     "task_name": "VARCHAR(80)",
     "group_name": "VARCHAR(50)",
+    "uploaded_at": "TIMESTAMP WITH TIME ZONE",
 }
 
 

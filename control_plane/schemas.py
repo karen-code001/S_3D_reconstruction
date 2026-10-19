@@ -52,6 +52,7 @@ class TaskView(BaseModel):
     error_message: str | None
     created_at: datetime
     updated_at: datetime
+    uploaded_at: datetime | None = None
     completed_at: datetime | None
 
 
