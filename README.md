@@ -183,6 +183,7 @@ ssh -N -p 30952 -L 127.0.0.1:14002:127.0.0.1:14000 -R 127.0.0.1:13001:127.0.0.1:
 - `eggplant`（茄子）：`20261020-eggplant-class.ini`
 - `pepper`（辣椒）：`20260720-lajiao.ini`
 - `rapeseed`（油菜）：`903_YOLO26.ini`
+- `tomato_new`（番茄-新）：`20261020-Tomato-CEN-fewshot.ini`
 
 创建任务示例：
 

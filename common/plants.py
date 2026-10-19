@@ -6,6 +6,7 @@ class PlantType(str, Enum):
     EGGPLANT = "eggplant"
     PEPPER = "pepper"
     RAPESEED = "rapeseed"
+    TOMATO_NEW = "tomato_new"
 
 
 YOLO_INI_FILES = {
@@ -13,6 +14,7 @@ YOLO_INI_FILES = {
     PlantType.EGGPLANT: "20261020-eggplant-class.ini",
     PlantType.PEPPER: "20260720-lajiao.ini",
     PlantType.RAPESEED: "903_YOLO26.ini",
+    PlantType.TOMATO_NEW: "20261020-Tomato-CEN-fewshot.ini",
 }
 
 
