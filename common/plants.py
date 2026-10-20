@@ -7,6 +7,7 @@ class PlantType(str, Enum):
     PEPPER = "pepper"
     RAPESEED = "rapeseed"
     TOMATO_NEW = "tomato_new"
+    OTHER = "other"
 
 
 YOLO_INI_FILES = {
@@ -15,6 +16,8 @@ YOLO_INI_FILES = {
     PlantType.PEPPER: "20260720-lajiao.ini",
     PlantType.RAPESEED: "903_YOLO26.ini",
     PlantType.TOMATO_NEW: "20261020-Tomato-CEN-fewshot.ini",
+    # Reconstruction only; the compute node skips YOLO but still requires an --ini value.
+    PlantType.OTHER: "903_YOLO26.ini",
 }
 
 

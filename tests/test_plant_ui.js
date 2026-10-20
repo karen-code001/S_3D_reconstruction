@@ -35,4 +35,8 @@ async function run(plant) {
   assert.equal(JSON.parse(saved.get('recon-recent-tasks'))[0].plant_type,plant);
   assert.equal(get('plantType').disabled,false);
 }
-(async()=>{for(const crop of ['tomato','eggplant','pepper','rapeseed','tomato_new']) await run(crop);console.log('Plant selection UI: 5 crops passed');})().catch(e=>{console.error(e);process.exitCode=1;});
+(async()=>{
+  const html=fs.readFileSync(path.join(__dirname,'../web_UI/index.html'),'utf8');
+  const offered=[...html.matchAll(/<option value="(\w+)">([^<]+)<\/option>/g)].map(m=>m[1]+'='+m[2]);
+  assert.deepEqual(offered,['eggplant=茄子','pepper=辣椒','rapeseed=油菜','tomato_new=番茄','other=其他植物（仅重建不分割）']);
+  for(const crop of ['eggplant','pepper','rapeseed','tomato_new','other']) await run(crop);console.log('Plant selection UI: 5 crops passed');})().catch(e=>{console.error(e);process.exitCode=1;});

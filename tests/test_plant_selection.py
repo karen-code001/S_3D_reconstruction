@@ -34,6 +34,7 @@ CASES = {
     'pepper': '20260720-lajiao.ini',
     'rapeseed': '903_YOLO26.ini',
     'tomato_new': '20261020-Tomato-CEN-fewshot.ini',
+    'other': '903_YOLO26.ini',
 }
 
 
