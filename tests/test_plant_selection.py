@@ -32,7 +32,7 @@ CASES = {
     'tomato': '20260411-Tomato-006.ini',
     'eggplant': '20261020-eggplant-class.ini',
     'pepper': '20260720-lajiao.ini',
-    'rapeseed': '20260526-rapeseed.ini',
+    'rapeseed': '903_YOLO26.ini',
     'ginkgo': '20260323-yinxing.ini',
     'tomato_new': '20261020-Tomato-CEN-fewshot.ini',
     'other': '903_YOLO26.ini',
