@@ -183,6 +183,7 @@ ssh -N -p 30952 -L 127.0.0.1:14002:127.0.0.1:14000 -R 127.0.0.1:13001:127.0.0.1:
 - `eggplant`（茄子）：`20261020-eggplant-class.ini`
 - `pepper`（辣椒）：`20260720-lajiao.ini`
 - `rapeseed`（油菜）：`20260526-rapeseed.ini`
+- `ginkgo`（银杏）：`20260323-yinxing.ini`
 - `tomato_new`（番茄）：`20261020-Tomato-CEN-fewshot.ini`
 - `other`（其他植物，仅重建不分割）：计算节点跳过分割，`--ini` 传 `903_YOLO26.ini` 但不会被读取
 
