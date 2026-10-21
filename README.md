@@ -182,7 +182,7 @@ ssh -N -p 30952 -L 127.0.0.1:14002:127.0.0.1:14000 -R 127.0.0.1:13001:127.0.0.1:
 - `tomato`（旧版番茄，界面已隐藏，仍接受旧请求）：`20260411-Tomato-006.ini`
 - `eggplant`（茄子）：`20261020-eggplant-class.ini`
 - `pepper`（辣椒）：`20260720-lajiao.ini`
-- `rapeseed`（油菜）：`903_YOLO26.ini`
+- `rapeseed`（油菜）：`20260526-rapeseed.ini`
 - `tomato_new`（番茄）：`20261020-Tomato-CEN-fewshot.ini`
 - `other`（其他植物，仅重建不分割）：计算节点跳过分割，`--ini` 传 `903_YOLO26.ini` 但不会被读取
 
