@@ -4,13 +4,14 @@ import logging
 import shutil
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
+from typing import Annotated
 from datetime import datetime
 from urllib.parse import parse_qs
 
 import httpx
 from fastapi import BackgroundTasks, Depends, FastAPI, File, Header, HTTPException, Query, Request, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 
 from common.security import TokenError, verify_upload_token
@@ -435,14 +436,29 @@ async def relay_compute_progress(
     return {"task_id": task_id, "accepted": True}
 
 
+# A task's result file is written once, so browsers may keep it and skip re-downloading on reload.
+RESULT_CACHE_CONTROL = "private, max-age=31536000, immutable"
+
+
 @app.get("/api/v1/results/{task_id}/{filename}")
-def download_result(task_id: str, filename: str):
+def download_result(task_id: str, filename: str, if_none_match: Annotated[str | None, Header()] = None):
     # Add user ownership checks or a signed download token before exposing this route publicly.
     path = (settings.storage_root / "results" / task_id / Path(filename).name).resolve()
     result_root = (settings.storage_root / "results").resolve()
     if result_root not in path.parents or not path.is_file():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="result not found")
-    return FileResponse(path, filename=path.name, media_type="application/octet-stream")
+    response = FileResponse(
+        path,
+        filename=path.name,
+        media_type="application/octet-stream",
+        headers={"Cache-Control": RESULT_CACHE_CONTROL},
+        stat_result=path.stat(),
+    )
+    etag = response.headers["etag"]
+    # Starlette's FileResponse ignores If-None-Match, so answer revalidations here instead of resending the file.
+    if if_none_match and (if_none_match.strip() == "*" or etag in {tag.strip().removeprefix("W/") for tag in if_none_match.split(",")}):
+        return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers={"ETag": etag, "Cache-Control": RESULT_CACHE_CONTROL})
+    return response
 
 
 @app.get("/")
