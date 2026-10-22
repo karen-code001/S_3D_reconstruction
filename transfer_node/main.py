@@ -81,19 +81,6 @@ async def heartbeat_loop(app: FastAPI) -> None:
 
 async def dispatch_loop(app: FastAPI) -> None:
     while True:
-        # inbox = settings.storage_root / "inbox"
-        # for task_dir in inbox.iterdir():
-        #     if (
-        #         not task_dir.is_dir()
-        #         or not (task_dir / ".ready").exists()
-        #         or (task_dir / ".dispatched").exists()
-        #         or task_dir.name in inflight_dispatches
-        #     ):
-        #         continue
-        #     source = task_source(task_dir)
-        #     if source is not None:
-        #         asyncio.create_task(dispatch_task(app, task_dir.name, source))
-        # await asyncio.sleep(settings.dispatch_interval_seconds)
         app.state.dispatch_wakeup.clear()
         await dispatch_pending(app)
         try:
@@ -384,18 +371,7 @@ async def upload_video(
         temporary = stored.path.parent / ".task.json.tmp"
         temporary.write_text(json.dumps({"plant_type": claims.plant_type}), encoding="utf-8")
         temporary.replace(metadata)
-
-        # await report_status(
-        #     app.state.client,
-        #     settings,
-        #     task_id,
-        #     TaskStatus.UPLOADED,
-        #     15,
-        #     "upload_verified",
-        #     actual_size=stored.size,
-        #     actual_sha256=stored.sha256,
-        # )
-        # (stored.path.parent / ".ready").touch()
+        
         background_tasks.add_task(dispatch_task, app, task_id, stored.path)
         verified_at = time.time_ns()
         # Keep slow status requests from letting a later verified upload enqueue first.
