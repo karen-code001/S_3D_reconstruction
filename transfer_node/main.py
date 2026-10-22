@@ -176,7 +176,7 @@ app = FastAPI(title="3D Reconstruction Transfer Node", version="0.1.0", lifespan
 
 
 class UploadAuthMiddleware:
-    """Authenticate upload URLs before the ASGI app reads the request body."""
+    """Authenticate and reserve upload capacity before reading the request body."""
 
     def __init__(self, app):
         self.app = app
@@ -219,7 +219,33 @@ class UploadAuthMiddleware:
             await send({"type": "http.response.body", "body": body})
             return
 
-        await self.app(scope, receive, send)
+        #await self.app(scope, receive, send)
+        global active_uploads
+        async with upload_lock:
+            capacity_available = active_uploads < settings.max_concurrent_uploads
+            if capacity_available:
+                active_uploads += 1
+
+        if not capacity_available:
+            body = json.dumps({"detail": "upload capacity reached"}).encode()
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": status.HTTP_429_TOO_MANY_REQUESTS,
+                    "headers": [
+                        (b"content-type", b"application/json"),
+                        (b"content-length", str(len(body)).encode()),
+                    ],
+                }
+            )
+            await send({"type": "http.response.body", "body": body})
+            return
+
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            async with upload_lock:
+                active_uploads -= 1
 
 
 app.add_middleware(UploadAuthMiddleware)
@@ -267,7 +293,7 @@ async def upload_video(
     token: str = Query(min_length=10),
     file: UploadFile = File(...),
 ) -> dict[str, object]:
-    global active_uploads
+    #global active_uploads
     try:
         claims = verify_upload_token(token, settings.upload_token_secret)
     except TokenError as exc:
@@ -284,11 +310,11 @@ async def upload_video(
     if (task_dir / ".ready").exists():
         reservation.unlink(missing_ok=True)
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="this task was already uploaded")
-    async with upload_lock:
-        if active_uploads >= settings.max_concurrent_uploads:
-            reservation.unlink(missing_ok=True)
-            raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="upload capacity reached")
-        active_uploads += 1
+    # async with upload_lock:
+    #     if active_uploads >= settings.max_concurrent_uploads:
+    #         reservation.unlink(missing_ok=True)
+    #         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="upload capacity reached")
+    #     active_uploads += 1
     try:
         await report_status(app.state.client, settings, task_id, TaskStatus.UPLOADING, 1, "receiving_video")
         stored = await store_upload(file, task_dir, settings.max_upload_bytes)
@@ -341,8 +367,8 @@ async def upload_video(
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="control plane unavailable") from exc
     finally:
-        async with upload_lock:
-            active_uploads -= 1
+        # async with upload_lock:
+        #     active_uploads -= 1
         reservation.unlink(missing_ok=True)
 
 
