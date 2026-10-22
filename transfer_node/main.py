@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import shutil
+import time
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import Annotated
@@ -26,6 +27,7 @@ from .tunnels import TunnelSupervisor
 settings = get_settings()
 active_uploads = 0
 upload_lock = asyncio.Lock()
+upload_completion_lock = asyncio.Lock()
 inflight_dispatches: set[str] = set()
 logger = logging.getLogger(__name__)
 heartbeat_connected = False
@@ -79,19 +81,57 @@ async def heartbeat_loop(app: FastAPI) -> None:
 
 async def dispatch_loop(app: FastAPI) -> None:
     while True:
-        inbox = settings.storage_root / "inbox"
-        for task_dir in inbox.iterdir():
-            if (
-                not task_dir.is_dir()
-                or not (task_dir / ".ready").exists()
-                or (task_dir / ".dispatched").exists()
-                or task_dir.name in inflight_dispatches
-            ):
-                continue
-            source = task_source(task_dir)
-            if source is not None:
-                asyncio.create_task(dispatch_task(app, task_dir.name, source))
-        await asyncio.sleep(settings.dispatch_interval_seconds)
+        # inbox = settings.storage_root / "inbox"
+        # for task_dir in inbox.iterdir():
+        #     if (
+        #         not task_dir.is_dir()
+        #         or not (task_dir / ".ready").exists()
+        #         or (task_dir / ".dispatched").exists()
+        #         or task_dir.name in inflight_dispatches
+        #     ):
+        #         continue
+        #     source = task_source(task_dir)
+        #     if source is not None:
+        #         asyncio.create_task(dispatch_task(app, task_dir.name, source))
+        # await asyncio.sleep(settings.dispatch_interval_seconds)
+        app.state.dispatch_wakeup.clear()
+        await dispatch_pending(app)
+        try:
+            await asyncio.wait_for(
+                app.state.dispatch_wakeup.wait(), timeout=settings.dispatch_interval_seconds
+            )
+        except asyncio.TimeoutError:
+            pass
+
+
+def ready_order(task_dir: Path) -> tuple[int, str]:
+    marker = task_dir / ".ready"
+    timestamp = marker.read_text(encoding="utf-8").strip()
+    # Older deployments created empty markers; preserve their ready time on restart.
+    ready_at = int(timestamp) if timestamp else marker.stat().st_mtime_ns
+    return ready_at, task_dir.name
+
+
+async def dispatch_pending(app: FastAPI) -> None:
+    """Only this worker dispatches; an unaccepted head must not be overtaken."""
+    inbox = settings.storage_root / "inbox"
+    pending = sorted(
+        (
+            task_dir for task_dir in inbox.iterdir()
+            if task_dir.is_dir()
+            and (task_dir / ".ready").exists()
+            and not (task_dir / ".dispatched").exists()
+        ),
+        key=ready_order,
+    )
+    for task_dir in pending:
+        source = task_source(task_dir)
+        if source is None:
+            logger.warning("Queue head has no source: task_id=%s", task_dir.name)
+            break
+        await dispatch_task(app, task_dir.name, source)
+        if not (task_dir / ".dispatched").exists():
+            break
 
 
 async def dispatch_task(app: FastAPI, task_id: str, source: Path) -> None:
@@ -160,6 +200,7 @@ async def lifespan(app: FastAPI):
     tunnels.start()
     # Internal traffic only; a Windows system proxy (e.g. Clash) must not intercept 127.0.0.1 tunnels.
     app.state.client = httpx.AsyncClient(timeout=10, trust_env=False)
+    app.state.dispatch_wakeup = asyncio.Event()
     heartbeat = asyncio.create_task(heartbeat_loop(app))
     dispatcher = asyncio.create_task(dispatch_loop(app))
     yield
@@ -219,7 +260,6 @@ class UploadAuthMiddleware:
             await send({"type": "http.response.body", "body": body})
             return
 
-        #await self.app(scope, receive, send)
         global active_uploads
         async with upload_lock:
             capacity_available = active_uploads < settings.max_concurrent_uploads
@@ -293,7 +333,6 @@ async def upload_video(
     token: str = Query(min_length=10),
     file: UploadFile = File(...),
 ) -> dict[str, object]:
-    #global active_uploads
     try:
         claims = verify_upload_token(token, settings.upload_token_secret)
     except TokenError as exc:
@@ -310,11 +349,6 @@ async def upload_video(
     if (task_dir / ".ready").exists():
         reservation.unlink(missing_ok=True)
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="this task was already uploaded")
-    # async with upload_lock:
-    #     if active_uploads >= settings.max_concurrent_uploads:
-    #         reservation.unlink(missing_ok=True)
-    #         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="upload capacity reached")
-    #     active_uploads += 1
     try:
         await report_status(app.state.client, settings, task_id, TaskStatus.UPLOADING, 1, "receiving_video")
         stored = await store_upload(file, task_dir, settings.max_upload_bytes)
@@ -344,31 +378,47 @@ async def upload_video(
                 error_message="uploaded SHA-256 does not match the declared value",
             )
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="uploaded SHA-256 mismatch")
-        await report_status(
-            app.state.client,
-            settings,
-            task_id,
-            TaskStatus.UPLOADED,
-            15,
-            "upload_verified",
-            actual_size=stored.size,
-            actual_sha256=stored.sha256,
-        )
+
         # Persist signed task metadata before making the upload dispatchable.
         metadata = stored.path.parent / ".task.json"
         temporary = stored.path.parent / ".task.json.tmp"
         temporary.write_text(json.dumps({"plant_type": claims.plant_type}), encoding="utf-8")
         temporary.replace(metadata)
-        (stored.path.parent / ".ready").touch()
+
+        # await report_status(
+        #     app.state.client,
+        #     settings,
+        #     task_id,
+        #     TaskStatus.UPLOADED,
+        #     15,
+        #     "upload_verified",
+        #     actual_size=stored.size,
+        #     actual_sha256=stored.sha256,
+        # )
+        # (stored.path.parent / ".ready").touch()
         background_tasks.add_task(dispatch_task, app, task_id, stored.path)
+        verified_at = time.time_ns()
+        # Keep slow status requests from letting a later verified upload enqueue first.
+        async with upload_completion_lock:
+            await report_status(
+                app.state.client,
+                settings,
+                task_id,
+                TaskStatus.UPLOADED,
+                15,
+                "upload_verified",
+                actual_size=stored.size,
+                actual_sha256=stored.sha256,
+            )
+            (stored.path.parent / ".ready").write_text(str(verified_at), encoding="utf-8")
+        app.state.dispatch_wakeup.set()
+
         return {"task_id": task_id, "status": TaskStatus.UPLOADED, "size": stored.size, "sha256": stored.sha256}
     except UploadTooLarge as exc:
         raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail=str(exc)) from exc
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="control plane unavailable") from exc
     finally:
-        # async with upload_lock:
-        #     active_uploads -= 1
         reservation.unlink(missing_ok=True)
 
 
