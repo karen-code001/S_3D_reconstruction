@@ -22,9 +22,9 @@ def node_score(node: NodeSnapshot) -> float:
     queue_ratio = node.pending_tasks / max(node.max_uploads * 2, 1)
     return (
         0.40 * upload_ratio
-        + 0.25 * (node.network_usage_percent / 100)
-        + 0.20 * (node.disk_usage_percent / 100)
-        + 0.15 * queue_ratio
+        + 0.38 * (node.network_usage_percent / 100)
+        + 0.02 * (node.disk_usage_percent / 100)
+        + 0.20 * queue_ratio
     )
 
 
