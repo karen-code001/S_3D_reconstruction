@@ -13,7 +13,7 @@ class PlantType(str, Enum):
 
 YOLO_INI_FILES = {
     PlantType.TOMATO: "20260411-Tomato-006.ini",
-    PlantType.EGGPLANT: "20261020-eggplant-class.ini",
+    PlantType.EGGPLANT: "20261024-CENCLASS-922.ini",
     PlantType.PEPPER: "20260720-lajiao.ini",
     PlantType.RAPESEED: "903_YOLO26.ini",
     PlantType.GINKGO: "20260323-yinxing.ini",

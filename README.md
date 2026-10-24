@@ -180,7 +180,7 @@ ssh -N -p 30952 -L 127.0.0.1:14002:127.0.0.1:14000 -R 127.0.0.1:13001:127.0.0.1:
 上传页面要求先选择番茄、茄子或辣椒；作物显示在本机最近任务中。创建任务的 `plant_type` 使用以下值，ini 文件名由服务端白名单确定：
 
 - `tomato`（旧版番茄，界面已隐藏，仍接受旧请求）：`20260411-Tomato-006.ini`
-- `eggplant`（茄子）：`20261020-eggplant-class.ini`
+- `eggplant`（茄子）：`20261024-CENCLASS-922.ini`
 - `pepper`（辣椒）：`20260720-lajiao.ini`
 - `rapeseed`（油菜）：`903_YOLO26.ini`
 - `ginkgo`（银杏）：`20260323-yinxing.ini`

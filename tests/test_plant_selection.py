@@ -30,7 +30,7 @@ from compute_node.processor import run_reconstruction
 
 CASES = {
     'tomato': '20260411-Tomato-006.ini',
-    'eggplant': '20261020-eggplant-class.ini',
+    'eggplant': '20261024-CENCLASS-922.ini',
     'pepper': '20260720-lajiao.ini',
     'rapeseed': '903_YOLO26.ini',
     'ginkgo': '20260323-yinxing.ini',
