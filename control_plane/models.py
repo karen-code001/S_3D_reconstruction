@@ -26,12 +26,30 @@ class TransferNode(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class Plant(Base):
+    __tablename__ = "plants"
+
+    key: Mapped[str] = mapped_column(String(20), primary_key=True)
+    name_zh: Mapped[str] = mapped_column(String(50))
+    name_en: Mapped[str] = mapped_column(String(80), default="")
+    yolo_ini: Mapped[str] = mapped_column(String(200))
+    # False runs reconstruction only (RGB, no YOLO segmentation).
+    segment: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Disabled crops are hidden from upload pickers but keep labelling their old tasks.
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
 class ReconstructionTask(Base):
     __tablename__ = "reconstruction_tasks"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     user_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
     plant_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # Copied from the plants table at creation so later crop edits do not change submitted tasks.
+    yolo_ini: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    segment: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     task_name: Mapped[str | None] = mapped_column(String(80), nullable=True)
     group_name: Mapped[str | None] = mapped_column(String(50), nullable=True)
     original_filename: Mapped[str] = mapped_column(String(500))

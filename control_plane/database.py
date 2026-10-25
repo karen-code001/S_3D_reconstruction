@@ -1,5 +1,5 @@
-from sqlalchemy import create_engine, inspect, text
-from sqlalchemy.orm import DeclarativeBase, sessionmaker
+from sqlalchemy import create_engine, inspect, select, text
+from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from .config import get_settings
 
@@ -18,6 +18,8 @@ UPGRADE_COLUMNS = {
     "task_name": "VARCHAR(80)",
     "group_name": "VARCHAR(50)",
     "uploaded_at": "TIMESTAMP WITH TIME ZONE",
+    "yolo_ini": "VARCHAR(200)",
+    "segment": "BOOLEAN",
 }
 
 
@@ -36,6 +38,30 @@ def ensure_task_columns(bind=engine):
             for name, column_type in UPGRADE_COLUMNS.items():
                 if name not in columns:
                     connection.execute(text(f"ALTER TABLE reconstruction_tasks ADD COLUMN {name} {column_type}"))
+
+
+def seed_plants(bind=engine):
+    """Fill an empty plants table with the built-in crops; never touches existing rows."""
+    from common.plants import DEFAULT_PLANTS
+
+    from .models import Plant
+
+    with Session(bind) as db:
+        if db.scalar(select(Plant.key).limit(1)) is not None:
+            return
+        db.add_all(
+            Plant(
+                key=seed.key,
+                name_zh=seed.name_zh,
+                name_en=seed.name_en,
+                yolo_ini=seed.yolo_ini,
+                segment=seed.segment,
+                enabled=seed.enabled,
+                sort_order=index * 10,
+            )
+            for index, seed in enumerate(DEFAULT_PLANTS)
+        )
+        db.commit()
 
 
 def get_db():

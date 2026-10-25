@@ -177,26 +177,32 @@ ssh -N -p 30952 -L 127.0.0.1:14002:127.0.0.1:14000 -R 127.0.0.1:13001:127.0.0.1:
 
 ## 作物选择与 YOLO ini
 
-上传页面要求先选择番茄、茄子或辣椒；作物显示在本机最近任务中。创建任务的 `plant_type` 使用以下值，ini 文件名由服务端白名单确定：
+作物及其 YOLO ini 保存在主控数据库的 `plants` 表里，在主控网页 `http://<主控>:13000/ui/plants.html`（上传页右上角「作物管理」）增删改，**保存后对新提交的任务立即生效，不需要改代码、推送或重启**。每种作物有：
 
-- `tomato`（旧版番茄，界面已隐藏，仍接受旧请求）：`20260411-Tomato-006.ini`
-- `eggplant`（茄子）：`20261024-CENCLASS-922.ini`
-- `pepper`（辣椒）：`20260720-lajiao.ini`
-- `rapeseed`（油菜）：`903_YOLO26.ini`
-- `ginkgo`（银杏）：`20260323-yinxing.ini`
-- `tomato_new`（番茄）：`20261020-Tomato-CEN-fewshot.ini`
-- `other`（其他植物，仅重建不分割）：计算节点跳过分割，`--ini` 传 `903_YOLO26.ini` 但不会被读取
+- 代号 `key`：任务里记录的 `plant_type`，1–20 位小写字母、数字、下划线，添加后不能改
+- 中文名 / 英文名：上传页面与任务列表显示的名字
+- `yolo_ini`：计算节点 `Config/YOLOv11-run` 目录下的文件名（不能带目录）；管理页会经中转节点列出各计算节点上已有的 ini，并提示文件是否存在、是否为空
+- 模式 `segment`：分割，或仅重建不分割（跳过 YOLO 与实例分割，ini 不会被读取）
+- 启用 `enabled`：停用后上传页面不再显示，但旧任务仍显示作物名；已有任务使用的作物只能停用，不能删除
+
+主控首次启动、`plants` 表为空时写入 `common/plants.py` 的 `DEFAULT_PLANTS`（番茄、茄子、辣椒、油菜、银杏、其他植物，以及已停用的旧番茄）；之后只以数据库为准，代码里的列表不再生效。
+
+修改作物需要管理口令：请求头 `X-Admin-Key` 等于主控的 `CONTROL_ADMIN_KEY`；未设置时使用 `CONTROL_INTERNAL_API_KEY`。接口：
+
+- `GET /api/v1/plants`：全部作物（含停用的），无需口令
+- `POST /api/v1/admin/plants`、`PUT /api/v1/admin/plants/{key}`、`DELETE /api/v1/admin/plants/{key}`
+- `GET /api/v1/admin/yolo-inis`：各计算节点上的 ini 文件（主控 → 中转 `/api/v1/compute-nodes/yolo-inis` → 计算节点 `/internal/yolo-inis`）
 
 创建任务示例：
 
 ```json
-{"filename":"video.mp4","content_type":"video/mp4","size":12345,"plant_type":"tomato"}
+{"filename":"video.mp4","content_type":"video/mp4","size":12345,"plant_type":"eggplant"}
 ```
 
-创建结果和任务查询返回 `plant_type` 与 `yolo_ini`。上传令牌签名保护作物选择，中转节点在 `.task.json` 保存选择以支持重启后的派发，再向计算节点传递 `plant_type` 和 `yolo_ini`。计算节点拒绝不匹配的文件名，并把经过验证的选择作为关键字参数传入 `run_reconstruction`。
+创建任务时主控把该作物当时的 `yolo_ini` 和 `segment` 记到任务上，并写入上传令牌签名；之后再改作物，不影响已提交的任务。中转节点在 `.task.json` 保存这两项以支持重启后的派发，再把 `plant_type`、`yolo_ini`、`segment` 交给计算节点。计算节点不再自己核对作物表，只检查 ini 文件名格式和文件是否存在（分割模式下还拒绝空文件），不通过时在保存视频之前返回 422。
 
-**计算节点的 `processor.py` 目前仍为占位实现，不运行 YOLO，也不加载 ini。** 接入真实流水线时，应在计算节点的配置目录内解析 `yolo_ini` 文件名并实际加载相应文件。这次修改没有创建或替换上述三个 ini 文件。
+升级前创建、没有记录 ini 的旧任务，按 `common/plants.py` 的 `LEGACY_YOLO_INI` 解析当时使用的 ini。
 
-需要同时更新并重启主控、中转及计算节点；混用旧版节点可能丢失作物参数。主控启动时自动为已有任务表补充可空的 `plant_type` 字段，保留旧记录。旧 API 调用及旧任务未指定作物时继续使用 `null`，不默认猜测作物。
+**本仓库 `compute_node/processor.py` 仍为占位实现，不运行 YOLO，也不加载 ini。** 真实计算节点见 R_3Dr_algorithm_Codex。
 
 验证：`python -m unittest discover -s tests -v`；`node tests/test_plant_ui.js`。

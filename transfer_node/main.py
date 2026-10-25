@@ -18,7 +18,13 @@ from pydantic import BaseModel, Field
 from common.security import TokenError, verify_upload_token
 from common.status import TaskStatus
 
-from .clients import choose_compute_node, query_compute_node_availability, report_status, send_job
+from .clients import (
+    choose_compute_node,
+    query_compute_node_availability,
+    query_compute_yolo_inis,
+    report_status,
+    send_job,
+)
 from .config import Settings, get_settings
 from .storage import UploadTooLarge, store_upload, task_source
 from .tunnels import TunnelSupervisor
@@ -313,6 +319,15 @@ async def compute_nodes_availability() -> dict[str, object]:
     }
 
 
+@app.get(
+    "/api/v1/compute-nodes/yolo-inis",
+    dependencies=[Depends(require_internal_key)],
+)
+async def compute_nodes_yolo_inis() -> dict[str, object]:
+    """YOLO ini files on each configured compute node, relayed to the control plane's crop admin page."""
+    return {"nodes": await query_compute_yolo_inis(app.state.client, settings, settings.compute_targets)}
+
+
 @app.post("/api/v1/uploads/{task_id}", status_code=status.HTTP_202_ACCEPTED)
 async def upload_video(
     task_id: str,
@@ -369,7 +384,10 @@ async def upload_video(
         # Persist signed task metadata before making the upload dispatchable.
         metadata = stored.path.parent / ".task.json"
         temporary = stored.path.parent / ".task.json.tmp"
-        temporary.write_text(json.dumps({"plant_type": claims.plant_type}), encoding="utf-8")
+        temporary.write_text(
+            json.dumps({"plant_type": claims.plant_type, "yolo_ini": claims.yolo_ini, "segment": claims.segment}),
+            encoding="utf-8",
+        )
         temporary.replace(metadata)
         
         background_tasks.add_task(dispatch_task, app, task_id, stored.path)

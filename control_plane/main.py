@@ -10,21 +10,25 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Security, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import APIKeyHeader
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from common.security import create_upload_token
-from common.plants import yolo_ini_for
+from common.plants import LEGACY_RECONSTRUCTION_ONLY, yolo_ini_for
 from common.status import ALLOWED_TRANSITIONS, TERMINAL_STATUSES, TaskStatus
 
 from .config import Settings, get_settings
-from .database import Base, SessionLocal, engine, get_db, ensure_task_columns
+from .database import Base, SessionLocal, engine, get_db, ensure_task_columns, seed_plants
 from .load_balancer import NodeSnapshot, _as_utc, choose_transfer_node, is_assignable
-from .models import ReconstructionTask, TransferNode, utcnow
+from .models import Plant, ReconstructionTask, TransferNode, utcnow
 from .schemas import (
     ComputeNodeStatus,
+    ComputeYoloInis,
     NodeHeartbeat,
+    PlantCreate,
+    PlantUpdate,
+    PlantView,
     TaskCreate,
     TaskCreated,
     TaskStatusUpdate,
@@ -34,6 +38,7 @@ from .schemas import (
 
 logger = logging.getLogger(__name__)
 internal_api_key_header = APIKeyHeader(name="X-Internal-Key", auto_error=False)
+admin_key_header = APIKeyHeader(name="X-Admin-Key", auto_error=False)
 heartbeat_monitor_interval_seconds = 10
 stale_node_ids: set[str] = set()
 
@@ -70,6 +75,7 @@ async def heartbeat_monitor_loop() -> None:
 async def lifespan(_: FastAPI):
     Base.metadata.create_all(bind=engine)
     ensure_task_columns()
+    seed_plants()
     heartbeat_monitor = asyncio.create_task(heartbeat_monitor_loop())
     try:
         yield
@@ -97,8 +103,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-Internal-Key"],
+    allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Internal-Key", "X-Admin-Key"],
 )
 
 webui_dir = Path(__file__).resolve().parent.parent / "web_UI"
@@ -112,6 +118,14 @@ def require_internal_key(
 ) -> None:
     if x_internal_key != config.internal_api_key:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid internal key")
+
+
+def require_admin_key(
+    x_admin_key: str | None = Security(admin_key_header),
+    config: Settings = Depends(get_settings),
+) -> None:
+    if x_admin_key != config.effective_admin_key:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid admin key")
 
 
 @app.get("/health")
@@ -133,6 +147,13 @@ def create_task(
     if selected is None:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="no healthy transfer node")
 
+    yolo_ini = segment = None
+    if body.plant_type is not None:
+        plant = db.get(Plant, body.plant_type)
+        if plant is None or not plant.enabled:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="unknown or disabled plant_type")
+        yolo_ini, segment = plant.yolo_ini, plant.segment
+
     task_id = str(uuid4())
     expires_at = datetime.now(timezone.utc) + timedelta(seconds=config.upload_token_ttl_seconds)
     token = create_upload_token(
@@ -143,11 +164,15 @@ def create_task(
         expected_size=body.size,
         expected_sha256=body.sha256,
         plant_type=body.plant_type,
+        yolo_ini=yolo_ini,
+        segment=segment,
     )
     task = ReconstructionTask(
         id=task_id,
         original_filename=body.filename,
         plant_type=body.plant_type,
+        yolo_ini=yolo_ini,
+        segment=segment,
         task_name=body.task_name,
         group_name=body.group_name,
         content_type=body.content_type,
@@ -168,7 +193,8 @@ def create_task(
           f"expected_file_name={task.original_filename}, content_type={task.content_type}, expected_size={task.expected_size}.");
     return TaskCreated(
         plant_type=body.plant_type,
-        yolo_ini=yolo_ini_for(body.plant_type),
+        yolo_ini=yolo_ini,
+        segment=segment,
         task_id=task_id,
         status=TaskStatus.CREATED,
         upload_url=f"{selected.public_url.rstrip('/')}/api/v1/uploads/{task_id}?token={token}",
@@ -194,6 +220,112 @@ def get_task(task_id: str, db: Session = Depends(get_db)) -> TaskView:
     if task is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
     return _task_view(task)
+
+
+@app.get("/api/v1/plants", response_model=list[PlantView])
+def list_plants(db: Session = Depends(get_db)) -> list[PlantView]:
+    """All crops, disabled ones included so old tasks keep their names; pickers show enabled ones."""
+    plants = db.scalars(select(Plant).order_by(Plant.sort_order, Plant.key)).all()
+    return [_plant_view(plant) for plant in plants]
+
+
+@app.get("/api/v1/admin/check", dependencies=[Depends(require_admin_key)])
+def check_admin_key() -> dict[str, bool]:
+    return {"ok": True}
+
+
+@app.post(
+    "/api/v1/admin/plants",
+    response_model=PlantView,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_admin_key)],
+)
+def create_plant(body: PlantCreate, db: Session = Depends(get_db)) -> PlantView:
+    if db.get(Plant, body.key) is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="plant key already exists")
+    sort_order = body.sort_order
+    if sort_order is None:
+        sort_order = (db.scalar(select(func.max(Plant.sort_order))) or 0) + 10
+    plant = Plant(
+        key=body.key,
+        name_zh=body.name_zh,
+        name_en=body.name_en,
+        yolo_ini=body.yolo_ini,
+        segment=body.segment,
+        enabled=body.enabled,
+        sort_order=sort_order,
+    )
+    db.add(plant)
+    db.commit()
+    logger.info("Plant created: key=%s yolo_ini=%s segment=%s", plant.key, plant.yolo_ini, plant.segment)
+    return _plant_view(plant)
+
+
+@app.put("/api/v1/admin/plants/{key}", response_model=PlantView, dependencies=[Depends(require_admin_key)])
+def update_plant(key: str, body: PlantUpdate, db: Session = Depends(get_db)) -> PlantView:
+    plant = db.get(Plant, key)
+    if plant is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="plant not found")
+    for field, value in body.model_dump(exclude_unset=True).items():
+        if value is not None:
+            setattr(plant, field, value)
+    db.commit()
+    logger.info("Plant updated: key=%s yolo_ini=%s segment=%s enabled=%s", plant.key, plant.yolo_ini, plant.segment, plant.enabled)
+    return _plant_view(plant)
+
+
+@app.delete(
+    "/api/v1/admin/plants/{key}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_admin_key)],
+)
+def delete_plant(key: str, db: Session = Depends(get_db)) -> None:
+    plant = db.get(Plant, key)
+    if plant is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="plant not found")
+    # Tasks keep their own ini snapshot, but their crop name comes from this row.
+    if db.scalar(select(ReconstructionTask.id).where(ReconstructionTask.plant_type == key).limit(1)) is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="plant is used by existing tasks; disable it instead")
+    db.delete(plant)
+    db.commit()
+    logger.info("Plant deleted: key=%s", key)
+
+
+@app.get(
+    "/api/v1/admin/yolo-inis",
+    response_model=list[ComputeYoloInis],
+    dependencies=[Depends(require_admin_key)],
+)
+async def list_yolo_inis(config: Settings = Depends(get_settings)) -> list[ComputeYoloInis]:
+    """Ini files present on each compute node, asked through the online transfer nodes."""
+    cutoff = datetime.now(timezone.utc) - timedelta(seconds=config.node_stale_after_seconds)
+    with SessionLocal() as db:
+        transfers = [
+            (node.id, node.public_url)
+            for node in db.scalars(select(TransferNode).order_by(TransferNode.id)).all()
+            if node.last_heartbeat.replace(tzinfo=node.last_heartbeat.tzinfo or timezone.utc) >= cutoff
+        ]
+
+    async def query(client: httpx.AsyncClient, transfer_id: str, public_url: str) -> list[ComputeYoloInis]:
+        try:
+            response = await client.get(
+                f"{public_url.rstrip('/')}/api/v1/compute-nodes/yolo-inis",
+                headers={"X-Internal-Key": config.internal_api_key},
+            )
+            response.raise_for_status()
+            nodes = response.json().get("nodes", [])
+        except (httpx.HTTPError, ValueError, AttributeError):
+            logger.warning("Failed to query compute ini files through TRANSFER_NODE_ID=%s", transfer_id)
+            return []
+        return [
+            ComputeYoloInis(transfer_node_id=transfer_id, **item)
+            for item in nodes
+            if isinstance(item, dict) and item.get("node_id")
+        ]
+
+    async with httpx.AsyncClient(timeout=10, trust_env=False) as client:
+        groups = await asyncio.gather(*(query(client, tid, url) for tid, url in transfers))
+    return [node for group in groups for node in group]
 
 
 @app.get("/api/v1/transfer-nodes", response_model=list[TransferNodeStatus])
@@ -433,10 +565,26 @@ def _snapshot(node: TransferNode) -> NodeSnapshot:
     )
 
 
+def _plant_view(plant: Plant) -> PlantView:
+    return PlantView(
+        key=plant.key,
+        name_zh=plant.name_zh,
+        name_en=plant.name_en,
+        yolo_ini=plant.yolo_ini,
+        segment=plant.segment,
+        enabled=plant.enabled,
+        sort_order=plant.sort_order,
+    )
+
+
 def _task_view(task: ReconstructionTask) -> TaskView:
+    segment = task.segment
+    if segment is None and task.plant_type:
+        segment = task.plant_type not in LEGACY_RECONSTRUCTION_ONLY
     return TaskView(
         plant_type=task.plant_type,
-        yolo_ini=yolo_ini_for(task.plant_type),
+        yolo_ini=task.yolo_ini or yolo_ini_for(task.plant_type),
+        segment=segment,
         task_name=task.task_name,
         group_name=task.group_name,
         task_id=task.id,

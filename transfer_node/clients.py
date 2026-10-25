@@ -6,7 +6,7 @@ from pathlib import Path
 import httpx
 
 from common.status import TaskStatus
-from common.plants import PlantType, yolo_ini_for
+from common.plants import validate_plant_key, validate_yolo_ini, yolo_ini_for
 
 from .config import ComputeTarget, Settings
 
@@ -82,6 +82,29 @@ async def query_compute_node_availability(
     return list(await asyncio.gather(*(probe_compute_node(client, target) for target in targets)))
 
 
+async def query_compute_yolo_inis(
+    client: httpx.AsyncClient,
+    settings: Settings,
+    targets: list[ComputeTarget],
+) -> list[dict[str, object]]:
+    """Ask each compute node which YOLO ini files it has, for the crop admin page."""
+
+    async def query(target: ComputeTarget) -> dict[str, object]:
+        try:
+            response = await client.get(
+                f"{target.base_url}/internal/yolo-inis",
+                headers={"X-Internal-Key": settings.internal_api_key},
+                timeout=5,
+            )
+            response.raise_for_status()
+            data = response.json()
+            return {"node_id": target.node_id, "reachable": True, "files": data.get("files", []), "error": data.get("error")}
+        except (httpx.HTTPError, ValueError, AttributeError) as exc:
+            return {"node_id": target.node_id, "reachable": False, "files": [], "error": type(exc).__name__}
+
+    return list(await asyncio.gather(*(query(target) for target in targets)))
+
+
 async def report_status(
     client: httpx.AsyncClient,
     settings: Settings,
@@ -127,10 +150,13 @@ async def send_job(
 ) -> None:
     metadata_path = source.parent / ".task.json"
     metadata = json.loads(metadata_path.read_text(encoding="utf-8")) if metadata_path.exists() else {}
-    plant_type = metadata.get("plant_type")
     plant_fields = {}
-    if plant_type is not None:
-        plant_fields = {"plant_type": PlantType(plant_type).value, "yolo_ini": yolo_ini_for(plant_type)}
+    if metadata.get("plant_type") is not None:
+        plant_fields["plant_type"] = validate_plant_key(metadata["plant_type"])
+        # Uploads verified before the plants table carry no snapshot; resolve them as they ran back then.
+        plant_fields["yolo_ini"] = validate_yolo_ini(metadata.get("yolo_ini") or yolo_ini_for(metadata["plant_type"]) or "")
+    if metadata.get("segment") is not None:
+        plant_fields["segment"] = "true" if metadata["segment"] else "false"
     with source.open("rb") as input_file:
         response = await client.post(
             f"{target.base_url}/internal/jobs/{task_id}",

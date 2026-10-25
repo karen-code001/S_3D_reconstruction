@@ -5,7 +5,7 @@ import json
 import time
 from dataclasses import dataclass
 
-from .plants import PlantType
+from .plants import validate_plant_key, validate_yolo_ini
 
 
 class TokenError(ValueError):
@@ -19,7 +19,10 @@ class UploadClaims:
     expires_at: int
     expected_size: int | None = None
     expected_sha256: str | None = None
-    plant_type: PlantType | None = None
+    plant_type: str | None = None
+    # Snapshot of the crop's settings when the task was created; None in older tokens.
+    yolo_ini: str | None = None
+    segment: bool | None = None
 
 
 def _encode(raw: bytes) -> str:
@@ -37,7 +40,9 @@ def create_upload_token(
     ttl_seconds: int,
     expected_size: int | None = None,
     expected_sha256: str | None = None,
-    plant_type: PlantType | str | None = None,
+    plant_type: str | None = None,
+    yolo_ini: str | None = None,
+    segment: bool | None = None,
 ) -> str:
     payload = {
         "task_id": task_id,
@@ -45,7 +50,9 @@ def create_upload_token(
         "exp": int(time.time()) + ttl_seconds,
         "expected_size": expected_size,
         "expected_sha256": expected_sha256,
-        "plant_type": PlantType(plant_type).value if plant_type is not None else None,
+        "plant_type": validate_plant_key(plant_type) if plant_type is not None else None,
+        "yolo_ini": validate_yolo_ini(yolo_ini) if yolo_ini is not None else None,
+        "segment": segment,
     }
     encoded = _encode(json.dumps(payload, separators=(",", ":"), sort_keys=True).encode())
     signature = _encode(hmac.new(secret.encode(), encoded.encode(), hashlib.sha256).digest())
@@ -63,7 +70,9 @@ def verify_upload_token(token: str, secret: str) -> UploadClaims:
             task_id=str(payload["task_id"]),
             node_id=str(payload["node_id"]),
             expires_at=int(payload["exp"]),
-            plant_type=PlantType(payload["plant_type"]) if payload.get("plant_type") is not None else None,
+            plant_type=validate_plant_key(str(payload["plant_type"])) if payload.get("plant_type") is not None else None,
+            yolo_ini=validate_yolo_ini(str(payload["yolo_ini"])) if payload.get("yolo_ini") is not None else None,
+            segment=bool(payload["segment"]) if payload.get("segment") is not None else None,
             expected_size=int(payload["expected_size"]) if payload.get("expected_size") is not None else None,
             expected_sha256=str(payload["expected_sha256"]) if payload.get("expected_sha256") else None,
         )

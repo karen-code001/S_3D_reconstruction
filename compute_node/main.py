@@ -10,7 +10,7 @@ from datetime import datetime
 import httpx
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile, status
 
-from common.plants import PlantType, yolo_ini_for
+from common.plants import validate_plant_key, validate_yolo_ini
 
 from .config import Settings, get_settings
 from .processor import run_reconstruction
@@ -103,14 +103,16 @@ async def process_job(
     input_path: Path,
     callback_url: str,
     progress_url: str,
-    plant_type: PlantType | None = None,
+    plant_type: str | None = None,
+    yolo_ini: str | None = None,
+    segment: bool | None = None,
 ) -> None:
     global active_jobs
     output_path = input_path.parent / "result-placeholder.txt"
     client = app.state.client
     try:
         await post_progress(client, progress_url, task_id, "PROCESSING", 30, "processing", settings.node_id)
-        await run_reconstruction(input_path, output_path, plant_type=plant_type, yolo_ini=yolo_ini_for(plant_type))
+        await run_reconstruction(input_path, output_path, plant_type=plant_type, yolo_ini=yolo_ini, segment=segment)
         await post_progress(client, progress_url, task_id, "PACKAGING", 80, "packaging", settings.node_id)
         await post_result(client, callback_url, task_id, output_path)
         (input_path.parent / ".complete").touch()
@@ -161,16 +163,22 @@ async def create_job(
     video: UploadFile = File(...),
     callback_url: str = Form(...),
     progress_url: str = Form(...),
-    plant_type: PlantType | None = Form(default=None),
+    plant_type: str | None = Form(default=None),
     yolo_ini: str | None = Form(default=None),
+    segment: bool | None = Form(default=None),
 ) -> dict[str, object]:
     global active_jobs
     if not TASK_ID_PATTERN.fullmatch(task_id):
         await video.close()
         raise HTTPException(status_code=422, detail="invalid task_id")
-    if yolo_ini is not None and yolo_ini != yolo_ini_for(plant_type):
+    try:
+        if plant_type is not None:
+            validate_plant_key(plant_type)
+        if yolo_ini is not None:
+            validate_yolo_ini(yolo_ini)
+    except ValueError as exc:
         await video.close()
-        raise HTTPException(status_code=422, detail="yolo_ini does not match plant_type")
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     validate_callback_url(callback_url, "callback_url")
     validate_callback_url(progress_url, "progress_url")
     task_dir = settings.storage_root / task_id
@@ -196,7 +204,7 @@ async def create_job(
             active_jobs -= 1
         raise
 
-    asyncio.create_task(process_job(task_id, input_path, callback_url, progress_url, plant_type))
+    asyncio.create_task(process_job(task_id, input_path, callback_url, progress_url, plant_type, yolo_ini, segment))
     return {"task_id": task_id, "accepted": True, "size": size, "sha256": sha256}
 
 

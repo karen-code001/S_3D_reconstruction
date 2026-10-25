@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="./result-actions.css" />
   <link rel="stylesheet" href="./viewer-embedded.css" />
   <link rel="stylesheet" href="./viewer-progress.css" />
+  <link rel="stylesheet" href="./plants.css" />
   <script type="importmap">
     {
       "imports": {
@@ -22,7 +23,7 @@
   <div class="ambient ambient-a"></div><div class="ambient ambient-b"></div>
   <header class="topbar">
     <a class="brand" href="#top" aria-label="三维重建任务中心首页"><span class="brand-mark">3D</span><span><strong>三维重建</strong><small>任务中心</small></span></a>
-    <button id="settingsToggle" class="ghost-button" type="button">接口设置</button>
+    <nav class="topbar-actions"><a class="ghost-button" href="./plants.html">作物管理</a><button id="settingsToggle" class="ghost-button" type="button">接口设置</button></nav>
   </header>
   <main id="top">
     <section class="hero">
@@ -54,13 +55,7 @@
         <div id="fileCard" class="file-card" hidden><div class="file-type">Video</div><div class="file-meta"><strong id="fileName"></strong><span id="fileSize"></span></div><button id="removeFile" type="button" aria-label="移除文件">×</button></div>
         <label class="field" for="plantType">作物类型（必选）
           <select id="plantType" required>
-            <option value="" selected disabled>请选择作物</option>
-            <option value="eggplant">茄子</option>
-            <option value="pepper">辣椒</option>
-            <option value="rapeseed">油菜</option>
-            <option value="ginkgo">银杏</option>
-            <option value="tomato_new">番茄</option>
-            <option value="other">其他植物（仅重建不分割）</option>
+            <option value="" selected disabled>正在加载作物…</option>
           </select>
         </label>
         <label class="field">任务备注（可选）<input id="taskNote" maxlength="100" placeholder="例如：番茄植株 2026-09" /></label>

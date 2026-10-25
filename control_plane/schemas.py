@@ -3,11 +3,11 @@ from datetime import datetime
 from pydantic import BaseModel, Field, HttpUrl, field_validator
 
 from common.status import TaskStatus
-from common.plants import PlantType
+from common.plants import validate_plant_key, validate_yolo_ini
 
 
 class TaskCreate(BaseModel):
-    plant_type: PlantType | None = None
+    plant_type: str | None = None
     task_name: str | None = Field(default=None, max_length=80)
     group_name: str | None = Field(default=None, max_length=50)
     filename: str = Field(min_length=1, max_length=500)
@@ -22,10 +22,16 @@ class TaskCreate(BaseModel):
             raise ValueError("sha256 must contain 64 hexadecimal characters")
         return value.lower() if value else None
 
+    @field_validator("plant_type")
+    @classmethod
+    def validate_plant_type(cls, value: str | None) -> str | None:
+        return validate_plant_key(value) if value is not None else None
+
 
 class TaskCreated(BaseModel):
-    plant_type: PlantType | None = None
+    plant_type: str | None = None
     yolo_ini: str | None = None
+    segment: bool | None = None
     task_id: str
     status: TaskStatus
     upload_url: str
@@ -34,8 +40,9 @@ class TaskCreated(BaseModel):
 
 
 class TaskView(BaseModel):
-    plant_type: PlantType | None = None
+    plant_type: str | None = None
     yolo_ini: str | None = None
+    segment: bool | None = None
     task_name: str | None = None
     group_name: str | None = None
     task_id: str
@@ -54,6 +61,62 @@ class TaskView(BaseModel):
     updated_at: datetime
     uploaded_at: datetime | None = None
     completed_at: datetime | None
+
+
+class PlantView(BaseModel):
+    key: str
+    name_zh: str
+    name_en: str
+    yolo_ini: str
+    segment: bool
+    enabled: bool
+    sort_order: int
+
+
+class PlantUpdate(BaseModel):
+    name_zh: str | None = Field(default=None, min_length=1, max_length=50)
+    name_en: str | None = Field(default=None, max_length=80)
+    yolo_ini: str | None = None
+    segment: bool | None = None
+    enabled: bool | None = None
+    sort_order: int | None = None
+
+    @field_validator("name_zh", "name_en")
+    @classmethod
+    def strip_names(cls, value: str | None) -> str | None:
+        return value.strip() if value is not None else None
+
+    @field_validator("yolo_ini")
+    @classmethod
+    def check_yolo_ini(cls, value: str | None) -> str | None:
+        return validate_yolo_ini(value.strip()) if value is not None else None
+
+
+class PlantCreate(PlantUpdate):
+    key: str
+    name_zh: str = Field(min_length=1, max_length=50)
+    name_en: str = Field(default="", max_length=80)
+    yolo_ini: str
+    segment: bool = True
+    enabled: bool = True
+
+    @field_validator("key")
+    @classmethod
+    def check_key(cls, value: str) -> str:
+        return validate_plant_key(value.strip())
+
+
+class YoloIniFile(BaseModel):
+    name: str
+    size: int
+
+
+class ComputeYoloInis(BaseModel):
+    node_id: str
+    transfer_node_id: str
+    reachable: bool
+    files: list[YoloIniFile] = []
+    error: str | None = None
 
 
 class NodeHeartbeat(BaseModel):

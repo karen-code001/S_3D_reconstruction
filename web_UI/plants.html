@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="配置每种作物使用的 YOLO ini 与重建模式" />
+  <title>作物管理</title>
+  <link rel="stylesheet" href="./styles.css" />
+  <link rel="stylesheet" href="./plants.css" />
+</head>
+<body>
+  <div class="ambient ambient-a"></div><div class="ambient ambient-b"></div>
+  <header class="topbar">
+    <a class="brand" href="./index.html" aria-label="返回任务中心"><span class="brand-mark">3D</span><span><strong>三维重建</strong><small>作物管理</small></span></a>
+    <nav class="topbar-actions"><a class="ghost-button" href="./index.html">返回任务中心</a></nav>
+  </header>
+  <main class="plants-main">
+    <section class="panel plants-panel">
+      <div class="panel-heading"><span class="step-number">01</span><div><h2>管理口令</h2><p>修改作物需要管理口令（主控的 CONTROL_ADMIN_KEY；未设置时为 CONTROL_INTERNAL_API_KEY）。只保存在本标签页。</p></div></div>
+      <div class="key-row">
+        <label for="adminKey">管理口令<input id="adminKey" type="password" autocomplete="current-password" /></label>
+        <button id="checkKey" class="secondary-button" type="button">验证</button>
+      </div>
+    </section>
+
+    <section class="panel plants-panel">
+      <div class="panel-heading"><span class="step-number">02</span><div><h2>作物列表</h2><p>保存后立即对新提交的任务生效，不需要重启；已提交的任务保持提交时的设置。</p></div></div>
+      <p id="nodesLine" class="nodes-line">正在读取计算节点上的 ini 文件…</p>
+      <div class="table-wrap">
+        <table class="plants-table">
+          <thead>
+            <tr><th class="col-key">代号</th><th class="col-name">中文名</th><th class="col-name">英文名</th><th class="col-ini">YOLO ini</th><th class="col-mode">模式</th><th class="col-enabled">启用</th><th class="col-order">排序</th><th class="col-actions"></th></tr>
+          </thead>
+          <tbody id="plantRows"></tbody>
+          <tbody>
+            <tr class="new-row">
+              <td><input id="newKey" placeholder="如 maize" maxlength="20" /></td>
+              <td><input id="newNameZh" placeholder="如 玉米" maxlength="50" /></td>
+              <td><input id="newNameEn" placeholder="如 Maize" maxlength="80" /></td>
+              <td><input id="newIni" list="iniOptions" placeholder="选择或输入 .ini 文件名" /><span id="newIniState" class="ini-state"></span></td>
+              <td><select id="newSegment"><option value="true">分割</option><option value="false">仅重建不分割</option></select></td>
+              <td class="col-enabled"><input id="newEnabled" type="checkbox" checked /></td>
+              <td><input id="newOrder" type="number" placeholder="自动" /></td>
+              <td><button id="addPlant" class="row-button save" type="button">添加</button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <datalist id="iniOptions"></datalist>
+    </section>
+
+    <section class="panel plants-panel">
+      <p class="plants-help"><b>代号</b>：任务里记录的作物标识，添加后不能修改，只能用小写字母、数字和下划线。<br /><b>YOLO ini</b>：计算节点 Config/YOLOv11-run 目录下的文件名；下拉提示来自在线的计算节点，提交任务时计算节点还会再检查一次文件是否存在。<br /><b>模式</b>：「仅重建不分割」跳过 YOLO 与实例分割，只做 RGB 重建，ini 不会被读取。<br /><b>停用</b>：上传页面不再显示，但旧任务仍显示作物名。已有任务使用的作物只能停用，不能删除。</p>
+    </section>
+  </main>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="./plants.js"></script>
+</body>
+</html>
