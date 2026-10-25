@@ -1,4 +1,5 @@
 .topbar-actions{display:flex;gap:10px}
+.node-pause{margin-left:auto;flex:0 0 auto;border:1px solid var(--line)!important;border-radius:7px;padding:4px 9px;font-size:11px}
 a.ghost-button{text-decoration:none;font-size:13px}
 .plants-main{max-width:1200px}
 .plants-panel{padding:24px;margin-bottom:20px}

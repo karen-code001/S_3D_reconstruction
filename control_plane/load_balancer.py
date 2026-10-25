@@ -15,6 +15,8 @@ class NodeSnapshot:
     network_usage_percent: float
     disk_usage_percent: float
     last_heartbeat: datetime
+    # Set by an admin on the control plane; unlike draining, heartbeats never change it.
+    paused: bool = False
 
 
 def node_score(node: NodeSnapshot) -> float:
@@ -41,6 +43,7 @@ def is_assignable(node: NodeSnapshot, cutoff: datetime) -> bool:
     return (
         node.active
         and not node.draining
+        and not node.paused
         and node.current_uploads < node.max_uploads
         and node.disk_usage_percent < 95
         and _as_utc(node.last_heartbeat) >= cutoff

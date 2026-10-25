@@ -21,7 +21,7 @@ from common.status import ALLOWED_TRANSITIONS, TERMINAL_STATUSES, TaskStatus
 from .config import Settings, get_settings
 from .database import Base, SessionLocal, engine, get_db, ensure_task_columns, seed_plants
 from .load_balancer import NodeSnapshot, _as_utc, choose_transfer_node, is_assignable
-from .models import Plant, ReconstructionTask, TransferNode, utcnow
+from .models import Plant, ReconstructionTask, TransferNode, TransferNodePause, utcnow
 from .schemas import (
     ComputeNodeStatus,
     ComputeYoloInis,
@@ -142,7 +142,8 @@ def create_task(
     # Row locks prevent concurrent API workers from over-allocating the same node.
     # SQLite ignores this clause in local development; PostgreSQL honors it.
     rows = db.scalars(select(TransferNode).with_for_update()).all()
-    snapshots = [_snapshot(n) for n in rows]
+    paused = _paused_node_ids(db)
+    snapshots = [_snapshot(n, n.id in paused) for n in rows]
     selected = choose_transfer_node(snapshots, config.node_stale_after_seconds)
     if selected is None:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="no healthy transfer node")
@@ -336,8 +337,9 @@ def list_transfer_node_status(
     now = datetime.now(timezone.utc)
     cutoff = now - timedelta(seconds=config.node_stale_after_seconds)
     result = []
+    paused = _paused_node_ids(db)
     for node in db.scalars(select(TransferNode).order_by(TransferNode.id)).all():
-        snapshot = _snapshot(node)
+        snapshot = _snapshot(node, node.id in paused)
         last_heartbeat = snapshot.last_heartbeat
         if last_heartbeat.tzinfo is None:
             last_heartbeat = last_heartbeat.replace(tzinfo=timezone.utc)
@@ -350,9 +352,38 @@ def list_transfer_node_status(
                 current_uploads=node.current_uploads,
                 max_uploads=node.max_uploads,
                 disk_usage_percent=round(node.disk_usage_percent, 1),
+                paused=snapshot.paused,
             )
         )
     return result
+
+
+@app.put(
+    "/api/v1/admin/transfer-nodes/{node_id}/pause",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_admin_key)],
+)
+def pause_transfer_node(node_id: str, db: Session = Depends(get_db)) -> None:
+    """Stop assigning new uploads to a node; its accepted tasks still finish."""
+    if db.get(TransferNode, node_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="transfer node not registered")
+    if db.get(TransferNodePause, node_id) is None:
+        db.add(TransferNodePause(node_id=node_id))
+        db.commit()
+        logger.warning("Transfer node paused by admin: TRANSFER_NODE_ID=%s", node_id)
+
+
+@app.delete(
+    "/api/v1/admin/transfer-nodes/{node_id}/pause",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_admin_key)],
+)
+def resume_transfer_node(node_id: str, db: Session = Depends(get_db)) -> None:
+    pause = db.get(TransferNodePause, node_id)
+    if pause is not None:
+        db.delete(pause)
+        db.commit()
+        logger.warning("Transfer node resumed by admin: TRANSFER_NODE_ID=%s", node_id)
 
 
 @app.get("/api/v1/compute-nodes", response_model=list[ComputeNodeStatus])
@@ -550,8 +581,13 @@ def update_task_status(
     return _task_view(task)
 
 
-def _snapshot(node: TransferNode) -> NodeSnapshot:
+def _paused_node_ids(db: Session) -> set[str]:
+    return set(db.scalars(select(TransferNodePause.node_id)).all())
+
+
+def _snapshot(node: TransferNode, paused: bool = False) -> NodeSnapshot:
     return NodeSnapshot(
+        paused=paused,
         id=node.id,
         public_url=node.public_url,
         active=node.active,

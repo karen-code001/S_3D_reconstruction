@@ -26,6 +26,15 @@ class TransferNode(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class TransferNodePause(Base):
+    """Transfer nodes an admin paused; kept apart from transfer_nodes, which is cleared on shutdown."""
+
+    __tablename__ = "transfer_node_pauses"
+
+    node_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    paused_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class Plant(Base):
     __tablename__ = "plants"
 

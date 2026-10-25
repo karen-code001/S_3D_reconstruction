@@ -138,6 +138,7 @@ class TransferNodeStatus(BaseModel):
     current_uploads: int
     max_uploads: int
     disk_usage_percent: float
+    paused: bool = False
 
 
 class ComputeNodeStatus(BaseModel):
