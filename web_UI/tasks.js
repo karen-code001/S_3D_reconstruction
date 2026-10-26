@@ -21,21 +21,24 @@
     return data;
   };
 
-  // Times are datetime-local values ("2026-10-25T18:00"); '' means open-ended.
+  // All times on this page are Beijing time (UTC+8, no DST), whatever the browser's own timezone.
+  // Inputs hold Beijing wall time as datetime-local values ("2026-10-25T18:00"); '' means open-ended.
+  const BEIJING_OFFSET_MINUTES = 480;
   const EARLIEST = '1970-01-01T00:00:00+00:00', LATEST = '2100-01-01T00:00:00+00:00';
   const pad = n => String(n).padStart(2, '0');
-  const localValue = t => `${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}T${pad(t.getHours())}:${pad(t.getMinutes())}`;
-  // Local wall time -> ISO with this browser's offset at that moment, e.g. 2026-10-25T18:00:00+08:00.
+  // Shift by +8 h and read the UTC fields, so the browser's timezone never enters.
+  const beijingValue = ms => {
+    const t = new Date(ms + BEIJING_OFFSET_MINUTES * 60000);
+    return `${t.getUTCFullYear()}-${pad(t.getUTCMonth() + 1)}-${pad(t.getUTCDate())}T${pad(t.getUTCHours())}:${pad(t.getUTCMinutes())}`;
+  };
   const toIso = value => {
     const [date, time = '00:00'] = value.split('T');
-    const [y, m, d] = date.split('-').map(Number), [hh, mm] = time.split(':').map(Number);
-    const t = new Date(y, m - 1, d, hh, mm);
-    const off = -t.getTimezoneOffset(), sign = off >= 0 ? '+' : '-', abs = Math.abs(off);
-    return `${date}T${pad(hh)}:${pad(mm)}:00${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`;
+    return `${date}T${time.slice(0, 5)}:00+08:00`;
   };
   const dayRange = day => {
     const [y, m, d] = day.split('-').map(Number);
-    return { from: `${day}T00:00`, to: localValue(new Date(y, m - 1, d + 1)) };
+    const next = new Date(Date.UTC(y, m - 1, d + 1));  // calendar arithmetic only, no timezone involved
+    return { from: `${day}T00:00`, to: `${next.getUTCFullYear()}-${pad(next.getUTCMonth() + 1)}-${pad(next.getUTCDate())}T00:00` };
   };
   const range = ({ from, to }) => ({ start: from ? toIso(from) : EARLIEST, end: to ? toIso(to) : LATEST });
   const show = value => value.replace('T', ' ');
@@ -74,7 +77,7 @@
     const body = $('dayRows');
     if (!$('adminKey').value.trim()) return;
     try {
-      const days = await request('/api/v1/admin/tasks/daily?tz_offset_minutes=' + (-new Date().getTimezoneOffset()));
+      const days = await request('/api/v1/admin/tasks/daily?tz_offset_minutes=' + BEIJING_OFFSET_MINUTES);
       body.replaceChildren(...days.map(day => {
         const row = document.createElement('tr');
         if (day.hidden === day.total) row.className = 'disabled';
@@ -101,7 +104,6 @@
     }
   };
 
-  $('tzName').textContent = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' + (-new Date().getTimezoneOffset() / 60);
   $('checkKey').onclick = async () => {
     try {
       await request('/api/v1/admin/check');
@@ -113,7 +115,7 @@
   $('adminKey').onkeydown = e => { if (e.key === 'Enter') $('checkKey').onclick(); };
   $('preview').onclick = preview;
   ['fromTime', 'toTime'].forEach(id => { $(id).oninput = resetActions; });
-  $('toNow').onclick = () => { $('toTime').value = localValue(new Date()); resetActions(); };
+  $('toNow').onclick = () => { $('toTime').value = beijingValue(Date.now()); resetActions(); };
   $('clearRange').onclick = () => { $('fromTime').value = $('toTime').value = ''; resetActions(); };
   $('hideRange').onclick = () => { try { apply(selected(), true); } catch (e) { showToast(e.message, true); } };
   $('showRange').onclick = () => { try { apply(selected(), false); } catch (e) { showToast(e.message, true); } };
