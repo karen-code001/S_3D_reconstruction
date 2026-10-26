@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field, HttpUrl, field_validator
+from pydantic import AwareDatetime, BaseModel, Field, HttpUrl, field_validator, model_validator
 
 from common.status import TaskStatus
 from common.plants import validate_plant_key, validate_yolo_ini
@@ -61,6 +61,36 @@ class TaskView(BaseModel):
     updated_at: datetime
     uploaded_at: datetime | None = None
     completed_at: datetime | None
+    hidden: bool = False
+
+
+class TaskVisibilityRange(BaseModel):
+    """Tasks created in [start, end); both bounds must carry a timezone."""
+
+    start: AwareDatetime
+    end: AwareDatetime
+
+    @model_validator(mode="after")
+    def check_order(self):
+        if self.end <= self.start:
+            raise ValueError("end must be after start")
+        return self
+
+
+class TaskVisibilityUpdate(TaskVisibilityRange):
+    hidden: bool
+
+
+class TaskVisibilityCount(BaseModel):
+    total: int
+    hidden: int
+    updated: int = 0
+
+
+class TaskDayCount(BaseModel):
+    date: str
+    total: int
+    hidden: int
 
 
 class PlantView(BaseModel):

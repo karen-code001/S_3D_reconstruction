@@ -20,6 +20,7 @@ UPGRADE_COLUMNS = {
     "uploaded_at": "TIMESTAMP WITH TIME ZONE",
     "yolo_ini": "VARCHAR(200)",
     "segment": "BOOLEAN",
+    "hidden": "BOOLEAN",
 }
 
 

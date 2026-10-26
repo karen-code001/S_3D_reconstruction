@@ -59,6 +59,8 @@ class ReconstructionTask(Base):
     # Copied from the plants table at creation so later crop edits do not change submitted tasks.
     yolo_ini: Mapped[str | None] = mapped_column(String(200), nullable=True)
     segment: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # Hidden from the 8088 task list by an admin (/ui/tasks.html); data and results are kept.
+    hidden: Mapped[bool | None] = mapped_column(Boolean, nullable=True, default=False)
     task_name: Mapped[str | None] = mapped_column(String(80), nullable=True)
     group_name: Mapped[str | None] = mapped_column(String(50), nullable=True)
     original_filename: Mapped[str] = mapped_column(String(500))

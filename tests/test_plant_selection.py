@@ -59,8 +59,8 @@ class PlantTaskTests(unittest.TestCase):
         ensure_task_columns(engine)
         with engine.connect() as c:
             self.assertEqual(
-                c.execute(text('SELECT id, plant_type, task_name, group_name, uploaded_at, yolo_ini, segment FROM reconstruction_tasks')).one(),
-                ('old-task', None, None, None, None, None, None),
+                c.execute(text('SELECT id, plant_type, task_name, group_name, uploaded_at, yolo_ini, segment, hidden FROM reconstruction_tasks')).one(),
+                ('old-task', None, None, None, None, None, None, None),
             )
         engine.dispose()
 

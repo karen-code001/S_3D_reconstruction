@@ -10,7 +10,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Security, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import APIKeyHeader
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -31,8 +31,12 @@ from .schemas import (
     PlantView,
     TaskCreate,
     TaskCreated,
+    TaskDayCount,
     TaskStatusUpdate,
     TaskView,
+    TaskVisibilityCount,
+    TaskVisibilityRange,
+    TaskVisibilityUpdate,
     TransferNodeStatus,
 )
 
@@ -210,17 +214,76 @@ def list_recent_tasks(
     db: Session = Depends(get_db),
 ) -> list[TaskView]:
     tasks = db.scalars(
-        select(ReconstructionTask).order_by(ReconstructionTask.created_at.desc()).limit(limit)
+        select(ReconstructionTask)
+        .where(or_(ReconstructionTask.hidden.is_(None), ReconstructionTask.hidden.is_(False)))
+        .order_by(ReconstructionTask.created_at.desc())
+        .limit(limit)
     ).all()
     return [_task_view(task) for task in tasks]
 
 
 @app.get("/api/v1/tasks/{task_id}", response_model=TaskView)
 def get_task(task_id: str, db: Session = Depends(get_db)) -> TaskView:
+    """Hidden tasks are still returned (with hidden=true) so pages can tell 'hidden' from 'not found'."""
     task = db.get(ReconstructionTask, task_id)
     if task is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
     return _task_view(task)
+
+
+def _tasks_in_range(db: Session, start: datetime, end: datetime) -> list[ReconstructionTask]:
+    # Compared in Python: SQLite keeps naive UTC strings, so SQL comparisons with aware bounds are unreliable.
+    start, end = _as_utc(start), _as_utc(end)
+    return [task for task in db.scalars(select(ReconstructionTask)).all() if start <= _as_utc(task.created_at) < end]
+
+
+@app.post(
+    "/api/v1/admin/tasks/visibility/preview",
+    response_model=TaskVisibilityCount,
+    dependencies=[Depends(require_admin_key)],
+)
+def preview_task_visibility(body: TaskVisibilityRange, db: Session = Depends(get_db)) -> TaskVisibilityCount:
+    tasks = _tasks_in_range(db, body.start, body.end)
+    return TaskVisibilityCount(total=len(tasks), hidden=sum(bool(task.hidden) for task in tasks))
+
+
+@app.post(
+    "/api/v1/admin/tasks/visibility",
+    response_model=TaskVisibilityCount,
+    dependencies=[Depends(require_admin_key)],
+)
+def set_task_visibility(body: TaskVisibilityUpdate, db: Session = Depends(get_db)) -> TaskVisibilityCount:
+    """Hide or show every task created in [start, end) on the 8088 task list."""
+    tasks = _tasks_in_range(db, body.start, body.end)
+    changed = [task for task in tasks if bool(task.hidden) != body.hidden]
+    for task in changed:
+        task.hidden = body.hidden
+    db.commit()
+    logger.warning(
+        "Task visibility changed by admin: hidden=%s start=%s end=%s matched=%s updated=%s",
+        body.hidden, body.start.isoformat(), body.end.isoformat(), len(tasks), len(changed),
+    )
+    return TaskVisibilityCount(total=len(tasks), hidden=sum(bool(task.hidden) for task in tasks), updated=len(changed))
+
+
+@app.get(
+    "/api/v1/admin/tasks/daily",
+    response_model=list[TaskDayCount],
+    dependencies=[Depends(require_admin_key)],
+)
+def task_daily_counts(
+    tz_offset_minutes: int = Query(default=480, ge=-840, le=840),
+    db: Session = Depends(get_db),
+) -> list[TaskDayCount]:
+    """Tasks per local calendar day (UTC + tz_offset_minutes), newest day first."""
+    offset = timedelta(minutes=tz_offset_minutes)
+    days: dict[str, list[int]] = {}
+    for task in db.scalars(select(ReconstructionTask)).all():
+        day = (_as_utc(task.created_at) + offset).date().isoformat()
+        counts = days.setdefault(day, [0, 0])
+        counts[0] += 1
+        counts[1] += bool(task.hidden)
+    return [TaskDayCount(date=day, total=total, hidden=hidden) for day, (total, hidden) in sorted(days.items(), reverse=True)]
 
 
 @app.get("/api/v1/plants", response_model=list[PlantView])
@@ -639,6 +702,7 @@ def _task_view(task: ReconstructionTask) -> TaskView:
         updated_at=_as_utc(task.updated_at),
         uploaded_at=_as_utc(task.uploaded_at) if task.uploaded_at else None,
         completed_at=_as_utc(task.completed_at) if task.completed_at else None,
+        hidden=bool(task.hidden),
     )
 
 
