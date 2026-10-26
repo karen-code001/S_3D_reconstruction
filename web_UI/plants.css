@@ -1,4 +1,5 @@
 .topbar-actions{display:flex;gap:10px}
+@media(max-width:560px){.topbar{height:auto;min-height:65px;flex-wrap:wrap;gap:12px;padding-top:12px;padding-bottom:12px}.topbar-actions{flex-wrap:wrap}.topbar-actions .ghost-button{white-space:nowrap}}
 .node-pause{margin-left:auto;flex:0 0 auto;border:1px solid var(--line)!important;border-radius:7px;padding:4px 9px;font-size:11px}
 a.ghost-button{text-decoration:none;font-size:13px}
 .plants-main{max-width:1200px}
