@@ -21,41 +21,50 @@
     return data;
   };
 
-  // "2026-10-25" -> local midnight as ISO with this browser's offset, e.g. 2026-10-25T00:00:00+08:00.
-  const localMidnight = (day, addDays = 0) => {
-    const [y, m, d] = day.split('-').map(Number);
-    const t = new Date(y, m - 1, d + addDays);
+  // Times are datetime-local values ("2026-10-25T18:00"); '' means open-ended.
+  const EARLIEST = '1970-01-01T00:00:00+00:00', LATEST = '2100-01-01T00:00:00+00:00';
+  const pad = n => String(n).padStart(2, '0');
+  const localValue = t => `${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}T${pad(t.getHours())}:${pad(t.getMinutes())}`;
+  // Local wall time -> ISO with this browser's offset at that moment, e.g. 2026-10-25T18:00:00+08:00.
+  const toIso = value => {
+    const [date, time = '00:00'] = value.split('T');
+    const [y, m, d] = date.split('-').map(Number), [hh, mm] = time.split(':').map(Number);
+    const t = new Date(y, m - 1, d, hh, mm);
     const off = -t.getTimezoneOffset(), sign = off >= 0 ? '+' : '-', abs = Math.abs(off);
-    const pad = n => String(n).padStart(2, '0');
-    return `${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}T00:00:00${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`;
+    return `${date}T${pad(hh)}:${pad(mm)}:00${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`;
   };
-  const range = (from, to) => ({ start: localMidnight(from), end: localMidnight(to, 1) });  // both days included
-  const rangeText = (from, to) => from === to ? from : `${from} 至 ${to}`;
+  const dayRange = day => {
+    const [y, m, d] = day.split('-').map(Number);
+    return { from: `${day}T00:00`, to: localValue(new Date(y, m - 1, d + 1)) };
+  };
+  const range = ({ from, to }) => ({ start: from ? toIso(from) : EARLIEST, end: to ? toIso(to) : LATEST });
+  const show = value => value.replace('T', ' ');
+  const rangeText = ({ from, to }) => !from && !to ? '全部时间' : !from ? `${show(to)} 之前` : !to ? `${show(from)} 及以后` : `${show(from)} 至 ${show(to)}（不含）`;
   const selected = () => {
-    const from = $('fromDate').value, to = $('toDate').value || $('fromDate').value;
-    if (!from) throw new Error('请先选择开始日期');
-    if (to < from) throw new Error('结束日期不能早于开始日期');
-    return { from, to };
+    const sel = { from: $('fromTime').value, to: $('toTime').value };
+    if (sel.from && sel.to && sel.to <= sel.from) throw new Error('截止时间必须晚于起始时间');
+    return sel;
   };
+  const resetActions = () => { $('hideRange').disabled = $('showRange').disabled = true; };
 
   const preview = async () => {
     try {
-      const { from, to } = selected();
-      const r = await request('/api/v1/admin/tasks/visibility/preview', { method: 'POST', body: JSON.stringify(range(from, to)) });
-      $('previewLine').textContent = `${rangeText(from, to)}：共 ${r.total} 个任务，其中 ${r.hidden} 个已隐藏，${r.total - r.hidden} 个在 8088 显示。`;
+      const sel = selected();
+      const r = await request('/api/v1/admin/tasks/visibility/preview', { method: 'POST', body: JSON.stringify(range(sel)) });
+      $('previewLine').textContent = `${rangeText(sel)}：共 ${r.total} 个任务，其中 ${r.hidden} 个已隐藏，${r.total - r.hidden} 个在 8088 显示。`;
       $('hideRange').disabled = r.total === r.hidden;
       $('showRange').disabled = r.hidden === 0;
     } catch (e) { showToast(e.message, true); }
   };
 
-  const apply = async (from, to, hidden) => {
+  const apply = async (sel, hidden) => {
     const action = hidden ? '隐藏' : '恢复显示';
-    if (!confirm(`${action} ${rangeText(from, to)} 的全部任务？`)) return;
+    if (!confirm(`${action}「${rangeText(sel)}」提交的全部任务？`)) return;
     try {
-      const r = await request('/api/v1/admin/tasks/visibility', { method: 'POST', body: JSON.stringify({ ...range(from, to), hidden }) });
-      showToast(`已${action} ${r.updated} 个任务（${rangeText(from, to)} 共 ${r.total} 个）`);
+      const r = await request('/api/v1/admin/tasks/visibility', { method: 'POST', body: JSON.stringify({ ...range(sel), hidden }) });
+      showToast(`已${action} ${r.updated} 个任务（${rangeText(sel)} 共 ${r.total} 个）`);
       await loadDays();
-      if ($('fromDate').value) await preview();
+      await preview();
     } catch (e) { showToast(e.message, true); }
   };
 
@@ -71,11 +80,13 @@
         if (day.hidden === day.total) row.className = 'disabled';
         const date = document.createElement('a');
         date.href = '#'; date.textContent = day.date; date.className = 'day-link';
-        date.onclick = e => { e.preventDefault(); $('fromDate').value = day.date; $('toDate').value = day.date; preview(); };
+        // Day buttons also fill the range above, so the summary after the change describes that day.
+        const pick = () => { const r = dayRange(day.date); $('fromTime').value = r.from; $('toTime').value = r.to; return r; };
+        date.onclick = e => { e.preventDefault(); pick(); preview(); };
         const state = day.hidden === 0 ? '全部显示' : day.hidden === day.total ? '全部隐藏' : `${day.total - day.hidden} 个显示`;
         const actions = cell(
-          button('隐藏', 'danger', () => apply(day.date, day.date, true)), ' ',
-          button('恢复', 'save', () => apply(day.date, day.date, false)),
+          button('隐藏', 'danger', () => apply(pick(), true)), ' ',
+          button('恢复', 'save', () => apply(pick(), false)),
         );
         actions.className = 'col-actions';
         actions.firstChild.disabled = day.hidden === day.total;
@@ -101,9 +112,11 @@
   };
   $('adminKey').onkeydown = e => { if (e.key === 'Enter') $('checkKey').onclick(); };
   $('preview').onclick = preview;
-  ['fromDate', 'toDate'].forEach(id => { $(id).onchange = () => { $('hideRange').disabled = $('showRange').disabled = true; }; });
-  $('hideRange').onclick = () => { try { const { from, to } = selected(); apply(from, to, true); } catch (e) { showToast(e.message, true); } };
-  $('showRange').onclick = () => { try { const { from, to } = selected(); apply(from, to, false); } catch (e) { showToast(e.message, true); } };
+  ['fromTime', 'toTime'].forEach(id => { $(id).oninput = resetActions; });
+  $('toNow').onclick = () => { $('toTime').value = localValue(new Date()); resetActions(); };
+  $('clearRange').onclick = () => { $('fromTime').value = $('toTime').value = ''; resetActions(); };
+  $('hideRange').onclick = () => { try { apply(selected(), true); } catch (e) { showToast(e.message, true); } };
+  $('showRange').onclick = () => { try { apply(selected(), false); } catch (e) { showToast(e.message, true); } };
 
   $('adminKey').value = session.get();
   loadDays();

@@ -7,6 +7,7 @@
   <title>任务显示</title>
   <link rel="stylesheet" href="./styles.css" />
   <link rel="stylesheet" href="./plants.css" />
+  <style>.range-row .ghost-button{padding:11px 13px;font-size:13px}</style>
 </head>
 <body>
   <div class="ambient ambient-a"></div><div class="ambient ambient-b"></div>
@@ -24,13 +25,16 @@
     </section>
 
     <section class="panel plants-panel">
-      <div class="panel-heading"><span class="step-number">02</span><div><h2>按日期批量隐藏或显示</h2><p>隐藏的任务在 8088 任务列表里完全不显示；任务数据和点云都保留，随时可以恢复。日期按本机时区（<span id="tzName"></span>）计算，包含起止两天。</p></div></div>
+      <div class="panel-heading"><span class="step-number">02</span><div><h2>按时间批量隐藏或显示</h2><p>按任务的提交时间选择。隐藏的任务在 8088 任务列表里完全不显示；任务数据和点云都保留，随时可以恢复。时间按本机时区（<span id="tzName"></span>）计算。</p></div></div>
       <div class="key-row range-row">
-        <label for="fromDate">从<input id="fromDate" type="date" /></label>
-        <label for="toDate">到<input id="toDate" type="date" /></label>
+        <label for="fromTime">起始（含）<input id="fromTime" type="datetime-local" step="60" /></label>
+        <label for="toTime">截止（不含）<input id="toTime" type="datetime-local" step="60" /></label>
+        <button id="toNow" class="ghost-button" type="button" title="把截止时间设为当前时间">现在</button>
+        <button id="clearRange" class="ghost-button" type="button">清空</button>
         <button id="preview" class="secondary-button" type="button">统计</button>
       </div>
-      <p id="previewLine" class="nodes-line">选择日期后点「统计」，先看看这段时间有多少任务。</p>
+      <p class="nodes-line">起始留空 = 从最早的任务开始；截止留空 = 一直到现在及以后。例如隐藏「10 月 25 日 18:00 之前」的任务：起始留空，截止填 2026-10-25 18:00。</p>
+      <p id="previewLine" class="nodes-line">选好时间后点「统计」，先看看这段时间有多少任务。</p>
       <div class="range-actions">
         <button id="hideRange" class="row-button danger" type="button" disabled>隐藏这段时间的任务</button>
         <button id="showRange" class="row-button save" type="button" disabled>恢复显示</button>
@@ -38,7 +42,7 @@
     </section>
 
     <section class="panel plants-panel">
-      <div class="panel-heading"><span class="step-number">03</span><div><h2>每天的任务</h2><p>点日期可以填入上面的范围；也可以直接隐藏或恢复某一天。</p></div></div>
+      <div class="panel-heading"><span class="step-number">03</span><div><h2>每天的任务</h2><p>点日期会把上面的范围设为这一天 00:00 到次日 00:00；也可以直接隐藏或恢复某一天。</p></div></div>
       <div class="table-wrap">
         <table class="plants-table days-table">
           <thead><tr><th>日期</th><th>任务数</th><th>已隐藏</th><th>8088 显示</th><th class="col-actions"></th></tr></thead>

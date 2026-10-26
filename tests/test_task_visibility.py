@@ -71,6 +71,15 @@ class TaskVisibilityTests(unittest.TestCase):
         self.assertEqual(restored, {"total": 2, "hidden": 0, "updated": 2})
         self.assertEqual(len(self.listed()), 5)
 
+    def test_hide_everything_before_a_time_of_day(self):
+        # What the admin page sends for "start empty, end 2026-10-25 23:30": earliest .. 23:30 exclusive.
+        body = {"start": "1970-01-01T00:00:00+00:00", "end": "2026-10-25T23:30:00+08:00", "hidden": True}
+        result = self.client.post("/api/v1/admin/tasks/visibility", headers=ADMIN, json=body).json()
+        self.assertEqual(result["updated"], 3)  # legacy-null, before, first; "night" at exactly 23:30 is excluded
+        self.assertEqual(self.listed(), {"night", "after"})
+        later = {**body, "start": "2026-10-25T23:30:00+08:00", "end": "2100-01-01T00:00:00+00:00"}
+        self.assertEqual(self.client.post("/api/v1/admin/tasks/visibility/preview", headers=ADMIN, json=later).json()["total"], 2)
+
     def test_daily_counts_use_the_callers_timezone(self):
         self.client.post("/api/v1/admin/tasks/visibility", headers=ADMIN, json={**DAY_25, "hidden": True})
         beijing = {d["date"]: (d["total"], d["hidden"]) for d in
