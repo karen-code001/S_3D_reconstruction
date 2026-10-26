@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timedelta, timezone
 import logging
 from pathlib import Path
+import re
 from uuid import uuid4
 
 import httpx
@@ -23,6 +24,7 @@ from .database import Base, SessionLocal, engine, get_db, ensure_task_columns, s
 from .load_balancer import NodeSnapshot, _as_utc, choose_transfer_node, is_assignable
 from .models import Plant, ReconstructionTask, TransferNode, TransferNodePause, utcnow
 from .schemas import (
+    ComputeNodePath,
     ComputeNodeStatus,
     ComputeYoloInis,
     NodeHeartbeat,
@@ -424,7 +426,36 @@ async def list_compute_node_status(config: Settings = Depends(get_settings)) -> 
 
     async with httpx.AsyncClient(timeout=8, trust_env=False) as client:
         groups = await asyncio.gather(*(query(client, tid, url) for tid, url in transfers))
-    return [node for group in groups for node in group]
+    return merge_compute_reports([node for group in groups for node in group])
+
+
+def merge_compute_reports(reports: list[ComputeNodeStatus]) -> list[ComputeNodeStatus]:
+    """One row per compute node; transfer nodes configured with the same compute node id report the same machine."""
+    by_node: dict[str, list[ComputeNodeStatus]] = {}
+    for report in reports:
+        by_node.setdefault(report.node_id, []).append(report)
+    merged = []
+    for node_id, seen in by_node.items():
+        best = next((r for r in seen if r.available), None) or next((r for r in seen if r.reachable), seen[0])
+        merged.append(
+            best.model_copy(
+                update={
+                    "reachable": any(r.reachable for r in seen),
+                    "available": any(r.available for r in seen),
+                    "paths": [
+                        ComputeNodePath(
+                            transfer_node_id=r.transfer_node_id,
+                            reachable=r.reachable,
+                            available=r.available,
+                            reason=r.reason,
+                        )
+                        for r in seen
+                    ],
+                }
+            )
+        )
+    # Natural order, so Server-2 comes before Server-10.
+    return sorted(merged, key=lambda n: [int(p) if p.isdigit() else p for p in re.split(r"(\d+)", n.node_id)])
 
 
 @app.post("/internal/nodes/heartbeat", dependencies=[Depends(require_internal_key)])
