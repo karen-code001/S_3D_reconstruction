@@ -10,7 +10,7 @@
     download: ['/api/v1/tasks/{task_id}']
   };
   const $ = id => document.getElementById(id);
-  const els = Object.fromEntries(['settingsToggle','settingsPanel','apiBase','uploadPath','statusPath','downloadPath','saveSettings','dropZone','videoInput','fileCard','fileName','fileSize','removeFile','plantType','taskNote','uploadButton','uploadProgress','uploadPercent','uploadBar','taskResult','createdTaskId','copyTaskId','statusTaskId','statusButton','autoPoll','statusResult','downloadTaskId','viewButton','downloadButton','downloadHint','recentTasks','clearRecent','nodeSummary','transferNodes','computeSummary','computeNodes','toast'].map(id => [id, $(id)]));
+  const els = Object.fromEntries(['settingsToggle','settingsPanel','apiBase','uploadPath','statusPath','downloadPath','saveSettings','dropZone','videoInput','fileCard','fileName','fileSize','removeFile','plantType','taskNote','uploadButton','uploadProgress','uploadPercent','uploadBar','taskResult','createdTaskId','copyTaskId','statusTaskId','statusButton','autoPoll','statusResult','downloadTaskId','viewButton','downloadButton','downloadHint','recentTasks','clearRecent','toast'].map(id => [id, $(id)]));
   let selectedFile = null, pollTimer = null, toastTimer = null;
   const loadConfig = () => ({...DEFAULTS, ...(JSON.parse(localStorage.getItem('recon-api-config') || '{}'))});
   const saveConfig = config => localStorage.setItem('recon-api-config', JSON.stringify(config));
@@ -60,36 +60,9 @@
       showToast('作物列表加载失败：' + e.message, true);
     }
   };
-  const formatAge = s => s<60?s+' 秒前':s<3600?Math.floor(s/60)+' 分钟前':Math.floor(s/3600)+' 小时前';
-  // Shared with plants.html, so one admin password per tab covers both pages.
-  const ADMIN_KEY_STORAGE = 'recon-admin-key';
-  const adminKey = () => { try { return sessionStorage.getItem(ADMIN_KEY_STORAGE) || ''; } catch { return ''; } };
-  const togglePause = async node => {
-    let key = adminKey() || (prompt('请输入管理口令（与作物管理相同）') || '').trim();
-    if (!key) return;
-    const resume = node.paused;
-    if (!resume && !confirm(`暂停中转节点 ${node.node_id}？\n暂停后不再分配新任务，已接收的任务会照常完成。`)) return;
-    try {
-      const res = await fetch(base() + '/api/v1/admin/transfer-nodes/' + encodeURIComponent(node.node_id) + '/pause', {method: resume ? 'DELETE' : 'PUT', headers: {'X-Admin-Key': key}});
-      if (res.status === 401) { try { sessionStorage.removeItem(ADMIN_KEY_STORAGE); } catch {} throw new Error('管理口令不正确'); }
-      if (!res.ok) throw new Error(messageFrom(await res.json().catch(() => null)));
-      try { sessionStorage.setItem(ADMIN_KEY_STORAGE, key); } catch {}
-      showToast((resume ? '已恢复 ' : '已暂停 ') + node.node_id);
-      loadNodes();
-    } catch (e) { showToast(e.message, true); }
-  };
-  const loadNodes = async () => { try{const nodes=await requestJson(base()+'/api/v1/transfer-nodes'); els.nodeSummary.textContent=nodes.filter(n=>n.online).length+' / '+nodes.length+' 在线'; els.transferNodes.innerHTML=nodes.length?'':'<p class="muted">暂无中转节点</p>'; nodes.forEach(n=>{ const row=document.createElement('div'); row.className='recent-item node-item'; const dot=document.createElement('i'); dot.className='node-dot '+(n.assignable?'ok':n.online?'busy':'off'); dot.title=n.paused?'已暂停，不分配新任务':n.assignable?'可分配任务':n.online?'在线，暂不分配':'离线'; const info=document.createElement('div'); info.className='node-info'; const name=document.createElement('strong'); name.textContent=n.node_id; name.title=n.node_id; const meta=document.createElement('span'); meta.textContent=(n.paused?'已暂停 · ':'')+'上传 '+n.current_uploads+'/'+n.max_uploads+' · 磁盘 '+n.disk_usage_percent+'% · '+formatAge(n.seconds_since_heartbeat); info.append(name,meta); const toggle=document.createElement('button'); toggle.type='button'; toggle.className='node-pause'; toggle.textContent=n.paused?'恢复':'暂停'; toggle.title=n.paused?'恢复后重新分配新任务':'暂停后不再分配新任务'; toggle.onclick=()=>togglePause(n); row.append(dot,info,toggle); els.transferNodes.append(row); }); }catch(e){els.nodeSummary.textContent='';els.transferNodes.innerHTML='<p class="muted">无法获取节点状态</p>';} };
-  const COMPUTE_REASONS = {not_accepting_tasks:'不接单',at_capacity:'已满',unhealthy_response:'状态异常'};
-  // The control plane merges reports of the same compute node from several transfer nodes into one row.
-  const computePaths = n => {
-    const paths = n.paths && n.paths.length ? n.paths : [{transfer_node_id: n.transfer_node_id, reachable: n.reachable}];
-    const ok = paths.filter(p => p.reachable).map(p => p.transfer_node_id), down = paths.filter(p => !p.reachable).map(p => p.transfer_node_id);
-    return (ok.length ? '经 ' + ok.join('、') : '') + (ok.length && down.length ? ' · ' : '') + (down.length ? down.join('、') + ' 不通' : '');
-  };
-  const loadComputeNodes = async () => { try{const nodes=await requestJson(base()+'/api/v1/compute-nodes'); const reachable=nodes.filter(n=>n.reachable), offline=nodes.filter(n=>!n.reachable); els.computeSummary.textContent=nodes.filter(n=>n.available).length+' / '+nodes.length+' 可用'; els.computeNodes.innerHTML=nodes.length?'':'<p class="muted">暂无计算节点</p>'; reachable.forEach(n=>{ const row=document.createElement('div'); row.className='recent-item node-item'; const dot=document.createElement('i'); dot.className='node-dot '+(n.available?'ok':'busy'); dot.title=n.available?'可接收任务':(COMPUTE_REASONS[n.reason]||'暂不可用'); const info=document.createElement('div'); info.className='node-info'; const name=document.createElement('strong'); name.textContent=n.node_id; name.title=n.node_id; const meta=document.createElement('span'); meta.textContent=(n.capacity!=null?'任务 '+n.active_jobs+'/'+n.capacity:'')+(n.available?'':' · '+(COMPUTE_REASONS[n.reason]||'暂不可用'))+' · '+computePaths(n); meta.title=meta.textContent; info.append(name,meta); row.append(dot,info); els.computeNodes.append(row); }); if(offline.length){ const row=document.createElement('div'); row.className='recent-item node-item'; const dot=document.createElement('i'); dot.className='node-dot off'; const info=document.createElement('div'); info.className='node-info'; const name=document.createElement('span'); name.textContent=offline.length+' 个未连通'; name.textContent=offline.length+' 个未连通：'+offline.map(n=>n.node_id).join('、'); name.title=offline.map(n=>n.node_id+' · '+computePaths(n)).join('\n'); info.append(name); row.append(dot,info); els.computeNodes.append(row); } }catch(e){els.computeSummary.textContent='';els.computeNodes.innerHTML='<p class="muted">无法获取节点状态</p>';} };
   const cfg=loadConfig();els.apiBase.value=cfg.base||'';els.uploadPath.value=cfg.upload;els.statusPath.value=cfg.status;els.downloadPath.value=cfg.download;
   els.settingsToggle.onclick=()=>els.settingsPanel.hidden=!els.settingsPanel.hidden;
   els.saveSettings.onclick=()=>{saveConfig({base:els.apiBase.value.trim(),upload:els.uploadPath.value.trim()||DEFAULTS.upload,status:els.statusPath.value.trim()||DEFAULTS.status,download:els.downloadPath.value.trim()||DEFAULTS.download});showToast('接口设置已保存');els.settingsPanel.hidden=true;};
   els.dropZone.ondragover=e=>{e.preventDefault();els.dropZone.classList.add('dragging');};els.dropZone.ondragleave=()=>els.dropZone.classList.remove('dragging');els.dropZone.ondrop=e=>{e.preventDefault();els.dropZone.classList.remove('dragging');setFile(e.dataTransfer.files[0]);};els.dropZone.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();els.videoInput.click();}};
-  els.plantType.onchange=()=>{els.uploadButton.disabled=!selectedFile||!els.plantType.value;};els.videoInput.onchange=e=>setFile(e.target.files[0]);els.removeFile.onclick=e=>{e.preventDefault();clearFile();};els.uploadButton.onclick=upload;els.copyTaskId.onclick=async()=>{await navigator.clipboard.writeText(els.createdTaskId.textContent);showToast('task_id 已复制');};els.statusButton.onclick=queryStatus;els.statusTaskId.onkeydown=e=>{if(e.key==='Enter')queryStatus();};els.autoPoll.onchange=()=>{clearInterval(pollTimer);if(els.autoPoll.checked){queryStatus();pollTimer=setInterval(queryStatus,3000);}};els.viewButton.onclick=viewResult;els.downloadButton.onclick=download;els.downloadTaskId.onkeydown=e=>{if(e.key==='Enter')download();};els.clearRecent.onclick=()=>{localStorage.removeItem('recon-recent-tasks');renderRecent();};renderRecent();loadPlants();loadNodes();setInterval(loadNodes,5000);loadComputeNodes();setInterval(loadComputeNodes,10000);
+  els.plantType.onchange=()=>{els.uploadButton.disabled=!selectedFile||!els.plantType.value;};els.videoInput.onchange=e=>setFile(e.target.files[0]);els.removeFile.onclick=e=>{e.preventDefault();clearFile();};els.uploadButton.onclick=upload;els.copyTaskId.onclick=async()=>{await navigator.clipboard.writeText(els.createdTaskId.textContent);showToast('task_id 已复制');};els.statusButton.onclick=queryStatus;els.statusTaskId.onkeydown=e=>{if(e.key==='Enter')queryStatus();};els.autoPoll.onchange=()=>{clearInterval(pollTimer);if(els.autoPoll.checked){queryStatus();pollTimer=setInterval(queryStatus,3000);}};els.viewButton.onclick=viewResult;els.downloadButton.onclick=download;els.downloadTaskId.onkeydown=e=>{if(e.key==='Enter')download();};els.clearRecent.onclick=()=>{localStorage.removeItem('recon-recent-tasks');renderRecent();};renderRecent();loadPlants();
 })();

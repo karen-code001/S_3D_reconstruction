@@ -1,0 +1,14 @@
+main>.hero,main>.hero .hero-copy{max-width:none}
+.nodes-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;align-items:start}
+.nodes-grid .panel{min-width:0}
+.nodes-grid .node-info span{overflow-wrap:anywhere}
+.compute-filter{display:block;margin-top:16px;color:var(--muted);font-size:12px}
+.compute-filter select{display:block;width:100%;margin-top:8px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#091827;color:var(--text);font:inherit;color-scheme:dark}
+.compute-filter select:focus{outline:2px solid var(--cyan);outline-offset:2px}
+.compute-group-heading{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:10px 0}
+.compute-group-heading h3{min-width:0;margin:0;color:var(--cyan);font-size:12px;overflow-wrap:anywhere}
+.compute-group-heading .muted{flex-shrink:0}
+.compute-group:not([hidden])~.compute-group:not([hidden]){margin-top:20px}
+#transferNodes .node-item{cursor:pointer;border-radius:6px}
+#transferNodes .node-item:hover{background:rgba(67,217,208,.06)}
+@media(max-width:860px){.nodes-grid{grid-template-columns:1fr}}
