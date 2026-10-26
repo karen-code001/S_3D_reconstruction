@@ -171,14 +171,26 @@ class TransferNodeStatus(BaseModel):
     paused: bool = False
 
 
+class ComputeNodePath(BaseModel):
+    """How one transfer node sees a compute node (usually through its own SSH tunnel)."""
+
+    transfer_node_id: str
+    reachable: bool
+    available: bool
+    reason: str | None = None
+
+
 class ComputeNodeStatus(BaseModel):
     node_id: str
+    # The path the status below comes from: an available one if any, else a reachable one.
     transfer_node_id: str
     reachable: bool
     available: bool
     active_jobs: int | None = None
     capacity: int | None = None
     reason: str | None = None
+    # Every transfer node that reported this compute node.
+    paths: list[ComputeNodePath] = []
 
 
 class TaskStatusUpdate(BaseModel):
