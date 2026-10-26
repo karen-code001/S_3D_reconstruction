@@ -26,6 +26,17 @@ class TransferNode(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class TaskHideRule(Base):
+    """A hidden time range whose end was still in the future; tasks created inside it start hidden."""
+
+    __tablename__ = "task_hide_rules"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    start: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    end: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class TransferNodePause(Base):
     """Transfer nodes an admin paused; kept apart from transfer_nodes, which is cleared on shutdown."""
 

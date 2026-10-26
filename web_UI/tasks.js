@@ -54,9 +54,12 @@
     try {
       const sel = selected();
       const r = await request('/api/v1/admin/tasks/visibility/preview', { method: 'POST', body: JSON.stringify(range(sel)) });
-      $('previewLine').textContent = `${rangeText(sel)}：共 ${r.total} 个任务，其中 ${r.hidden} 个已隐藏，${r.total - r.hidden} 个在 8088 显示。`;
-      $('hideRange').disabled = r.total === r.hidden;
-      $('showRange').disabled = r.hidden === 0;
+      $('previewLine').textContent = `${rangeText(sel)}：共 ${r.total} 个任务，其中 ${r.hidden} 个已隐藏，${r.total - r.hidden} 个在 8088 显示。`
+        + (r.future ? ' 截止时间在未来：隐藏后，这段时间内之后提交的任务也会自动隐藏。' : '')
+        + (r.rules ? ` 有 ${r.rules} 条生效中的隐藏规则与这段时间重叠，恢复显示会同时删除它们。` : '');
+      // A future range is worth hiding even when it holds no task yet; restoring also clears its rules.
+      $('hideRange').disabled = r.total === r.hidden && !r.future;
+      $('showRange').disabled = r.hidden === 0 && r.rules === 0;
     } catch (e) { showToast(e.message, true); }
   };
 
@@ -65,10 +68,43 @@
     if (!confirm(`${action}「${rangeText(sel)}」提交的全部任务？`)) return;
     try {
       const r = await request('/api/v1/admin/tasks/visibility', { method: 'POST', body: JSON.stringify({ ...range(sel), hidden }) });
-      showToast(`已${action} ${r.updated} 个任务（${rangeText(sel)} 共 ${r.total} 个）`);
-      await loadDays();
+      showToast(`已${action} ${r.updated} 个任务（${rangeText(sel)} 共 ${r.total} 个）`
+        + (hidden && r.future ? '，之后在这段时间内提交的任务也会自动隐藏' : ''));
+      await Promise.all([loadDays(), loadRules()]);
       await preview();
     } catch (e) { showToast(e.message, true); }
+  };
+
+  // Server times (UTC) as Beijing wall time; the far bounds the page sends for empty inputs read as open ends.
+  const ruleTime = (iso, openText) => {
+    const ms = Date.parse(iso);
+    return ms <= Date.parse(EARLIEST) || ms >= Date.parse(LATEST) ? openText : show(beijingValue(ms));
+  };
+  const loadRules = async () => {
+    const body = $('ruleRows');
+    if (!$('adminKey').value.trim()) return;
+    try {
+      const rules = await request('/api/v1/admin/tasks/hide-rules');
+      body.replaceChildren(...rules.map(rule => {
+        const row = document.createElement('tr');
+        const remove = button('删除规则', 'danger', async () => {
+          if (!confirm('删除这条规则？之后在这段时间内提交的任务会正常显示，已隐藏的任务不受影响。')) return;
+          try {
+            await request('/api/v1/admin/tasks/hide-rules/' + rule.id, { method: 'DELETE' });
+            showToast('已删除隐藏规则');
+            loadRules();
+          } catch (e) { showToast(e.message, true); }
+        });
+        const actions = cell(remove);
+        actions.className = 'col-actions';
+        row.append(cell(ruleTime(rule.start, '最早')), cell(ruleTime(rule.end, '长期有效')), actions);
+        return row;
+      }));
+      if (!rules.length) body.innerHTML = '<tr><td colspan="3" class="muted">没有生效中的规则。</td></tr>';
+    } catch (e) {
+      body.innerHTML = '<tr><td colspan="3" class="muted"></td></tr>';
+      body.querySelector('td').textContent = e.message;
+    }
   };
 
   const cell = (...children) => { const td = document.createElement('td'); td.append(...children); return td; };
@@ -109,7 +145,7 @@
       await request('/api/v1/admin/check');
       session.set($('adminKey').value.trim());
       showToast('管理口令正确');
-      loadDays();
+      loadDays(); loadRules();
     } catch (e) { showToast(e.message, true); }
   };
   $('adminKey').onkeydown = e => { if (e.key === 'Enter') $('checkKey').onclick(); };
@@ -121,5 +157,5 @@
   $('showRange').onclick = () => { try { apply(selected(), false); } catch (e) { showToast(e.message, true); } };
 
   $('adminKey').value = session.get();
-  loadDays();
+  loadDays(); loadRules();
 })();

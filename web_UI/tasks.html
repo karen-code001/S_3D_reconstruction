@@ -33,7 +33,7 @@
         <button id="clearRange" class="ghost-button" type="button">清空</button>
         <button id="preview" class="secondary-button" type="button">统计</button>
       </div>
-      <p class="nodes-line">起始留空 = 从最早的任务开始；截止留空 = 一直到现在及以后。例如隐藏「10 月 25 日 18:00 之前」的任务：起始留空，截止填 2026-10-25 18:00。</p>
+      <p class="nodes-line">起始留空 = 从最早的任务开始；截止留空 = 一直到现在及以后。例如隐藏「10 月 25 日 18:00 之前」的任务：起始留空，截止填 2026-10-25 18:00。截止时间可以选在未来：隐藏后，这段时间内之后提交的任务也会自动隐藏（见下方「生效中的隐藏规则」）。</p>
       <p id="previewLine" class="nodes-line">选好时间后点「统计」，先看看这段时间有多少任务。</p>
       <div class="range-actions">
         <button id="hideRange" class="row-button danger" type="button" disabled>隐藏这段时间的任务</button>
@@ -42,7 +42,17 @@
     </section>
 
     <section class="panel plants-panel">
-      <div class="panel-heading"><span class="step-number">03</span><div><h2>每天的任务（北京时间）</h2><p>点日期会把上面的范围设为这一天 00:00 到次日 00:00；也可以直接隐藏或恢复某一天。</p></div></div>
+      <div class="panel-heading"><span class="step-number">03</span><div><h2>生效中的隐藏规则（北京时间）</h2><p>截止时间在未来的隐藏范围会保留为规则：在范围内新提交的任务一提交就是隐藏的。删除规则后，之后提交的任务恢复正常显示，已经隐藏的任务不受影响。</p></div></div>
+      <div class="table-wrap">
+        <table class="plants-table days-table">
+          <thead><tr><th>起始</th><th>截止（不含）</th><th class="col-actions"></th></tr></thead>
+          <tbody id="ruleRows"><tr><td colspan="3" class="muted">输入管理口令后显示。</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel plants-panel">
+      <div class="panel-heading"><span class="step-number">04</span><div><h2>每天的任务（北京时间）</h2><p>点日期会把上面的范围设为这一天 00:00 到次日 00:00；也可以直接隐藏或恢复某一天。</p></div></div>
       <div class="table-wrap">
         <table class="plants-table days-table">
           <thead><tr><th>日期</th><th>任务数</th><th>已隐藏</th><th>8088 显示</th><th class="col-actions"></th></tr></thead>

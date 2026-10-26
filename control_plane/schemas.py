@@ -85,6 +85,16 @@ class TaskVisibilityCount(BaseModel):
     total: int
     hidden: int
     updated: int = 0
+    # The range ends in the future: hiding it also hides tasks created later inside it.
+    future: bool = False
+    # Active hide rules overlapping the range (restoring the range removes them).
+    rules: int = 0
+
+
+class TaskHideRuleView(BaseModel):
+    id: int
+    start: datetime
+    end: datetime
 
 
 class TaskDayCount(BaseModel):

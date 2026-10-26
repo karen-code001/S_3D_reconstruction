@@ -22,7 +22,7 @@ from common.status import ALLOWED_TRANSITIONS, TERMINAL_STATUSES, TaskStatus
 from .config import Settings, get_settings
 from .database import Base, SessionLocal, engine, get_db, ensure_task_columns, seed_plants
 from .load_balancer import NodeSnapshot, _as_utc, choose_transfer_node, is_assignable
-from .models import Plant, ReconstructionTask, TransferNode, TransferNodePause, utcnow
+from .models import Plant, ReconstructionTask, TaskHideRule, TransferNode, TransferNodePause, utcnow
 from .schemas import (
     ComputeNodePath,
     ComputeNodeStatus,
@@ -34,6 +34,7 @@ from .schemas import (
     TaskCreate,
     TaskCreated,
     TaskDayCount,
+    TaskHideRuleView,
     TaskStatusUpdate,
     TaskView,
     TaskVisibilityCount,
@@ -182,6 +183,7 @@ def create_task(
         segment=segment,
         task_name=body.task_name,
         group_name=body.group_name,
+        hidden=_hidden_by_rule(db, utcnow()),
         content_type=body.content_type,
         expected_size=body.size,
         expected_sha256=body.sha256,
@@ -246,7 +248,28 @@ def _tasks_in_range(db: Session, start: datetime, end: datetime) -> list[Reconst
 )
 def preview_task_visibility(body: TaskVisibilityRange, db: Session = Depends(get_db)) -> TaskVisibilityCount:
     tasks = _tasks_in_range(db, body.start, body.end)
-    return TaskVisibilityCount(total=len(tasks), hidden=sum(bool(task.hidden) for task in tasks))
+    return TaskVisibilityCount(
+        total=len(tasks),
+        hidden=sum(bool(task.hidden) for task in tasks),
+        future=_as_utc(body.end) > utcnow(),
+        rules=len(_overlapping_rules(db, body.start, body.end)),
+    )
+
+
+def _active_rules(db: Session) -> list[TaskHideRule]:
+    now = utcnow()
+    return [rule for rule in db.scalars(select(TaskHideRule).order_by(TaskHideRule.start)).all() if _as_utc(rule.end) > now]
+
+
+def _overlapping_rules(db: Session, start: datetime, end: datetime) -> list[TaskHideRule]:
+    start, end = _as_utc(start), _as_utc(end)
+    return [rule for rule in _active_rules(db) if _as_utc(rule.start) < end and _as_utc(rule.end) > start]
+
+
+def _hidden_by_rule(db: Session, created_at: datetime) -> bool:
+    """New tasks start hidden when an admin already hid a range covering their creation time."""
+    created_at = _as_utc(created_at)
+    return any(_as_utc(rule.start) <= created_at < _as_utc(rule.end) for rule in _active_rules(db))
 
 
 @app.post(
@@ -255,17 +278,61 @@ def preview_task_visibility(body: TaskVisibilityRange, db: Session = Depends(get
     dependencies=[Depends(require_admin_key)],
 )
 def set_task_visibility(body: TaskVisibilityUpdate, db: Session = Depends(get_db)) -> TaskVisibilityCount:
-    """Hide or show every task created in [start, end) on the 8088 task list."""
+    """Hide or show every task created in [start, end) on the 8088 task list.
+
+    Hiding a range that ends in the future also stores a rule, so tasks created later inside
+    it start hidden; showing a range removes the active rules that overlap it.
+    """
     tasks = _tasks_in_range(db, body.start, body.end)
     changed = [task for task in tasks if bool(task.hidden) != body.hidden]
     for task in changed:
         task.hidden = body.hidden
+    future = _as_utc(body.end) > utcnow()
+    if body.hidden and future:
+        db.add(TaskHideRule(start=_as_utc(body.start), end=_as_utc(body.end)))
+    removed = 0
+    if not body.hidden:
+        for rule in _overlapping_rules(db, body.start, body.end):
+            db.delete(rule)
+            removed += 1
     db.commit()
     logger.warning(
-        "Task visibility changed by admin: hidden=%s start=%s end=%s matched=%s updated=%s",
+        "Task visibility changed by admin: hidden=%s start=%s end=%s matched=%s updated=%s rule_added=%s rules_removed=%s",
         body.hidden, body.start.isoformat(), body.end.isoformat(), len(tasks), len(changed),
+        body.hidden and future, removed,
     )
-    return TaskVisibilityCount(total=len(tasks), hidden=sum(bool(task.hidden) for task in tasks), updated=len(changed))
+    return TaskVisibilityCount(
+        total=len(tasks),
+        hidden=sum(bool(task.hidden) for task in tasks),
+        updated=len(changed),
+        future=future,
+        rules=len(_overlapping_rules(db, body.start, body.end)),
+    )
+
+
+@app.get(
+    "/api/v1/admin/tasks/hide-rules",
+    response_model=list[TaskHideRuleView],
+    dependencies=[Depends(require_admin_key)],
+)
+def list_hide_rules(db: Session = Depends(get_db)) -> list[TaskHideRuleView]:
+    """Hide rules that still cover future submissions."""
+    return [TaskHideRuleView(id=r.id, start=_as_utc(r.start), end=_as_utc(r.end)) for r in _active_rules(db)]
+
+
+@app.delete(
+    "/api/v1/admin/tasks/hide-rules/{rule_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_admin_key)],
+)
+def delete_hide_rule(rule_id: int, db: Session = Depends(get_db)) -> None:
+    """Stop hiding new submissions in this range; tasks already hidden stay hidden."""
+    rule = db.get(TaskHideRule, rule_id)
+    if rule is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="hide rule not found")
+    db.delete(rule)
+    db.commit()
+    logger.warning("Task hide rule deleted by admin: id=%s start=%s end=%s", rule_id, rule.start, rule.end)
 
 
 @app.get(

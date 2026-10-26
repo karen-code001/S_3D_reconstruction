@@ -1,5 +1,5 @@
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -27,7 +27,7 @@ class TaskVisibilityTests(unittest.TestCase):
         Base.metadata.create_all(engine)
         self.sessions = sessionmaker(bind=engine, expire_on_commit=False)
         with self.sessions() as db:
-            db.add(TransferNode(id="transfer-1", public_url="http://transfer.test"))
+            db.add(TransferNode(id="transfer-1", public_url="http://transfer.test", max_uploads=50))
             for task_id, created in (
                 ("before", "2026-10-24T23:59:59+08:00"),
                 ("first", "2026-10-25T00:00:00+08:00"),
@@ -55,10 +55,10 @@ class TaskVisibilityTests(unittest.TestCase):
     def test_hiding_a_day_removes_exactly_its_tasks_from_the_list(self):
         self.assertEqual(self.listed(), {"before", "first", "night", "after", "legacy-null"})
         preview = self.client.post("/api/v1/admin/tasks/visibility/preview", headers=ADMIN, json=DAY_25).json()
-        self.assertEqual(preview, {"total": 2, "hidden": 0, "updated": 0})
+        self.assertEqual(preview, {"total": 2, "hidden": 0, "updated": 0, "future": False, "rules": 0})
 
         result = self.client.post("/api/v1/admin/tasks/visibility", headers=ADMIN, json={**DAY_25, "hidden": True}).json()
-        self.assertEqual(result, {"total": 2, "hidden": 2, "updated": 2})
+        self.assertEqual(result, {"total": 2, "hidden": 2, "updated": 2, "future": False, "rules": 0})
         self.assertEqual(self.listed(), {"before", "after", "legacy-null"})
         again = self.client.post("/api/v1/admin/tasks/visibility", headers=ADMIN, json={**DAY_25, "hidden": True}).json()
         self.assertEqual(again["updated"], 0)
@@ -68,7 +68,7 @@ class TaskVisibilityTests(unittest.TestCase):
         self.assertFalse(self.client.get("/api/v1/tasks/after").json()["hidden"])
 
         restored = self.client.post("/api/v1/admin/tasks/visibility", headers=ADMIN, json={**DAY_25, "hidden": False}).json()
-        self.assertEqual(restored, {"total": 2, "hidden": 0, "updated": 2})
+        self.assertEqual(restored, {"total": 2, "hidden": 0, "updated": 2, "future": False, "rules": 0})
         self.assertEqual(len(self.listed()), 5)
 
     def test_hide_everything_before_a_time_of_day(self):
@@ -79,6 +79,40 @@ class TaskVisibilityTests(unittest.TestCase):
         self.assertEqual(self.listed(), {"night", "after"})
         later = {**body, "start": "2026-10-25T23:30:00+08:00", "end": "2100-01-01T00:00:00+00:00"}
         self.assertEqual(self.client.post("/api/v1/admin/tasks/visibility/preview", headers=ADMIN, json=later).json()["total"], 2)
+
+    def test_hiding_a_range_that_ends_in_the_future_also_hides_later_submissions(self):
+        now = datetime.now(timezone.utc)
+        until_later = {"start": (now - timedelta(hours=1)).isoformat(), "end": (now + timedelta(hours=1)).isoformat()}
+        self.assertTrue(self.client.post("/api/v1/admin/tasks/visibility/preview", headers=ADMIN, json=until_later).json()["future"])
+        result = self.client.post("/api/v1/admin/tasks/visibility", headers=ADMIN, json={**until_later, "hidden": True}).json()
+        self.assertEqual((result["total"], result["future"], result["rules"]), (0, True, 1))
+
+        created = self.client.post("/api/v1/tasks", json={"filename": "v.mp4"}).json()["task_id"]
+        self.assertTrue(self.client.get(f"/api/v1/tasks/{created}").json()["hidden"])
+        self.assertNotIn(created, self.listed())
+        rules = self.client.get("/api/v1/admin/tasks/hide-rules", headers=ADMIN).json()
+        self.assertEqual(len(rules), 1)
+
+        # Restoring the range shows the task and drops the rule, so the next one is visible.
+        shown = self.client.post("/api/v1/admin/tasks/visibility", headers=ADMIN, json={**until_later, "hidden": False}).json()
+        self.assertEqual((shown["updated"], shown["rules"]), (1, 0))
+        self.assertEqual(self.client.get("/api/v1/admin/tasks/hide-rules", headers=ADMIN).json(), [])
+        later = self.client.post("/api/v1/tasks", json={"filename": "v.mp4"}).json()["task_id"]
+        self.assertIn(later, self.listed())
+
+    def test_a_past_range_saves_no_rule_and_a_rule_can_be_deleted(self):
+        self.client.post("/api/v1/admin/tasks/visibility", headers=ADMIN, json={**DAY_25, "hidden": True})
+        self.assertEqual(self.client.get("/api/v1/admin/tasks/hide-rules", headers=ADMIN).json(), [])
+        self.assertIn(self.client.post("/api/v1/tasks", json={"filename": "v.mp4"}).json()["task_id"], self.listed())
+
+        now = datetime.now(timezone.utc)
+        window = {"start": now.isoformat(), "end": (now + timedelta(days=1)).isoformat(), "hidden": True}
+        self.client.post("/api/v1/admin/tasks/visibility", headers=ADMIN, json=window)
+        rule_id = self.client.get("/api/v1/admin/tasks/hide-rules", headers=ADMIN).json()[0]["id"]
+        self.assertEqual(self.client.delete(f"/api/v1/admin/tasks/hide-rules/{rule_id}").status_code, 401)
+        self.assertEqual(self.client.delete(f"/api/v1/admin/tasks/hide-rules/{rule_id}", headers=ADMIN).status_code, 204)
+        self.assertEqual(self.client.delete(f"/api/v1/admin/tasks/hide-rules/{rule_id}", headers=ADMIN).status_code, 404)
+        self.assertIn(self.client.post("/api/v1/tasks", json={"filename": "v.mp4"}).json()["task_id"], self.listed())
 
     def test_daily_counts_use_the_callers_timezone(self):
         self.client.post("/api/v1/admin/tasks/visibility", headers=ADMIN, json={**DAY_25, "hidden": True})
