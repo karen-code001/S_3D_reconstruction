@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import Annotated
 from datetime import datetime
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, quote
 
 import httpx
 from fastapi import BackgroundTasks, Depends, FastAPI, File, Header, HTTPException, Query, Request, UploadFile, status
@@ -451,7 +451,7 @@ async def receive_result(
             TaskStatus.SUCCEEDED,
             100,
             "completed",
-            result_url=f"{settings.public_url.rstrip('/')}/api/v1/results/{task_id}/{result_path.name}",
+            result_url=f"/api/v1/results/{task_id}/{quote(result_path.name, safe='')}",
         )
         complete_marker.touch()
     print(datetime.now());

@@ -5,6 +5,7 @@ import logging
 from pathlib import Path
 import re
 from uuid import uuid4
+from urllib.parse import quote, unquote
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Query, Security, status
@@ -13,7 +14,7 @@ from fastapi.security import APIKeyHeader
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, object_session
 
 from common.security import create_upload_token
 from common.plants import LEGACY_RECONSTRUCTION_ONLY, yolo_ini_for
@@ -233,6 +234,20 @@ def get_task(task_id: str, db: Session = Depends(get_db)) -> TaskView:
     if task is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="task not found")
     return _task_view(task)
+
+
+def _result_url(task: ReconstructionTask) -> str | None:
+    file_relative_pathname = task.result_url
+    if file_relative_pathname is None:
+        return None
+    db = object_session(task)
+    if db is None:
+        return None
+    node = db.get(TransferNode, task.transfer_node_id)
+    if node is None:
+        return None
+    # Keep only the relative path in the task; resolve the node on each query.
+    return f"{node.public_url.rstrip('/')}{file_relative_pathname}"
 
 
 def _tasks_in_range(db: Session, start: datetime, end: datetime) -> list[ReconstructionTask]:
@@ -793,7 +808,7 @@ def _task_view(task: ReconstructionTask) -> TaskView:
         current_stage=task.current_stage,
         transfer_node_id=task.transfer_node_id,
         compute_node_id=task.compute_node_id,
-        result_url=task.result_url,
+        result_url=_result_url(task),
         error_code=task.error_code,
         error_message=task.error_message,
         created_at=_as_utc(task.created_at),
